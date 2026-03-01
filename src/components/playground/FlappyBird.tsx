@@ -1162,7 +1162,7 @@ export function FlappyBird({
 
               if (hasResults) {
                 return (
-                  <div className="bg-background/60 backdrop-blur-sm rounded-xl border border-primary/20 px-6 py-5 shadow-md text-center space-y-3 pointer-events-auto">
+                  <div className="bg-background/60 backdrop-blur-sm rounded-xl border border-primary/20 px-6 py-5 shadow-md text-center space-y-3 pointer-events-auto animate-in fade-in slide-in-from-bottom-3 duration-300">
                     <div className="flex justify-center">
                       <div className="w-10 h-10 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center">
                         <TypeIcon className={cn("h-5 w-5", typeConfig.color)} />
@@ -1214,7 +1214,7 @@ export function FlappyBird({
 
       {/* Task running indicator */}
       {isTaskRunning && (
-        <div className="absolute top-4 right-4">
+        <div className="absolute top-4 right-4 animate-in fade-in slide-in-from-top-2 duration-300">
           <Badge
             variant="secondary"
             className="gap-2 px-3 py-1.5 bg-background/80 backdrop-blur-sm border border-border/50"
@@ -1230,7 +1230,7 @@ export function FlappyBird({
 
       {/* Results notification during playing/gameover */}
       {hasResults && !isTaskRunning && gameState !== "idle" && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10">
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 animate-in fade-in slide-in-from-top-2 duration-300">
           <button
             className="flex items-center gap-2 px-4 py-2 rounded-full bg-primary text-primary-foreground text-sm font-medium shadow-lg hover:bg-primary/90 transition-colors"
             onClick={(e) => {

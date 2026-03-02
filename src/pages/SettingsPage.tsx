@@ -31,6 +31,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { toast } from "@/hooks/useToast";
 import {
   Eye,
@@ -124,6 +134,7 @@ export function SettingsPage() {
   const [cacheItems, setCacheItems] = useState<CacheItem[]>([]);
   const [showCacheDialog, setShowCacheDialog] = useState(false);
   const [isDeletingItem, setIsDeletingItem] = useState<string | null>(null);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   // Get the saved language preference (including 'auto')
   const [languagePreference, setLanguagePreference] = useState(() => {
@@ -1084,7 +1095,7 @@ export function SettingsPage() {
               <Button
                 variant="destructive"
                 size="sm"
-                onClick={handleClearCache}
+                onClick={() => setShowClearConfirm(true)}
                 disabled={isClearingCache || cacheSize === 0}
               >
                 {isClearingCache ? (
@@ -1166,7 +1177,7 @@ export function SettingsPage() {
               <Button
                 variant="destructive"
                 size="sm"
-                onClick={handleClearCache}
+                onClick={() => setShowClearConfirm(true)}
                 disabled={isClearingCache}
               >
                 {isClearingCache ? (
@@ -1180,6 +1191,30 @@ export function SettingsPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Clear Cache Confirmation */}
+      <AlertDialog open={showClearConfirm} onOpenChange={setShowClearConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("settings.cache.clear")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {cacheSize > 0
+                ? `This will delete ${formatSize(cacheSize)} of cached data including SD models and browser cache. Downloaded models will need to be re-downloaded. This cannot be undone.`
+                : "This will clear all cached data. This cannot be undone."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={handleClearCache}
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              {t("settings.cache.clear")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Card className="mt-6">
         <CardHeader>

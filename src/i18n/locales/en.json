@@ -117,6 +117,7 @@
     "type": "Type",
     "basePrice": "Base price",
     "openInNewTab": "Open in new tab",
+    "replaceCurrentTab": "Replace current tab",
     "addToFavorites": "Add to favorites",
     "removeFromFavorites": "Remove from favorites"
   },

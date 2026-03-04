@@ -117,6 +117,7 @@
     "type": "Jenis",
     "basePrice": "Harga asas",
     "openInNewTab": "Buka dalam tab baharu",
+    "replaceCurrentTab": "Ganti tab semasa",
     "addToFavorites": "Tambah ke kegemaran",
     "removeFromFavorites": "Buang dari kegemaran"
   },

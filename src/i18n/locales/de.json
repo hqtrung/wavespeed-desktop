@@ -117,6 +117,7 @@
     "type": "Typ",
     "basePrice": "Grundpreis",
     "openInNewTab": "In neuem Tab öffnen",
+    "replaceCurrentTab": "Aktuellen Tab ersetzen",
     "addToFavorites": "Zu Favoriten hinzufügen",
     "removeFromFavorites": "Aus Favoriten entfernen"
   },

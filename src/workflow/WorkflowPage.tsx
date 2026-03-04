@@ -855,6 +855,7 @@ export function WorkflowPage() {
   // Load template from URL query param
   useEffect(() => {
     const templateId = searchParams.get("template");
+    const templateMode = searchParams.get("mode") as "new" | "replace" | null;
     if (!templateId || !startupSessionReady) return;
 
     const loadTemplateData = async () => {
@@ -944,6 +945,26 @@ export function WorkflowPage() {
           targetHandle: e.targetInputKey,
           type: "custom",
         }));
+
+        // Create new tab for the template (unless replacing current)
+        if (templateMode !== "replace") {
+          saveCurrentTabSnapshot();
+          tabIdCounter++;
+          const newTabId = `tab-${tabIdCounter}`;
+          setTabs((prev) => [
+            ...prev,
+            {
+              tabId: newTabId,
+              workflowId: null,
+              workflowName: result.name,
+              nodes: [],
+              edges: [],
+              isDirty: false,
+              createdAt: Date.now(),
+            },
+          ]);
+          setActiveTabId(newTabId);
+        }
 
         // Update workflow store
         useWorkflowStore.setState({
@@ -2130,24 +2151,28 @@ export function WorkflowPage() {
         open={showTemplateDialog}
         onOpenChange={setShowTemplateDialog}
         templateType="workflow"
-        onUseTemplate={async (template) => {
+        onUseTemplate={async (template, mode) => {
           if (template.workflowData?.graphDefinition) {
-            saveCurrentTabSnapshot();
-            tabIdCounter++;
-            const newTabId = `tab-${tabIdCounter}`;
-            setTabs((prev) => [
-              ...prev,
-              {
-                tabId: newTabId,
-                workflowId: null,
-                workflowName: template.name,
-                nodes: [],
-                edges: [],
-                isDirty: false,
-                createdAt: Date.now(),
-              },
-            ]);
-            setActiveTabId(newTabId);
+            const shouldCreateNewTab = mode !== "replace";
+
+            if (shouldCreateNewTab) {
+              saveCurrentTabSnapshot();
+              tabIdCounter++;
+              const newTabId = `tab-${tabIdCounter}`;
+              setTabs((prev) => [
+                ...prev,
+                {
+                  tabId: newTabId,
+                  workflowId: null,
+                  workflowName: template.name,
+                  nodes: [],
+                  edges: [],
+                  isDirty: false,
+                  createdAt: Date.now(),
+                },
+              ]);
+              setActiveTabId(newTabId);
+            }
 
             // Build a definition map from already-loaded nodeDefs
             const defMap = new Map(

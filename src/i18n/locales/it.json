@@ -117,6 +117,7 @@
     "type": "Tipo",
     "basePrice": "Prezzo base",
     "openInNewTab": "Apri in nuova scheda",
+    "replaceCurrentTab": "Sostituisci scheda corrente",
     "addToFavorites": "Aggiungi ai preferiti",
     "removeFromFavorites": "Rimuovi dai preferiti"
   },

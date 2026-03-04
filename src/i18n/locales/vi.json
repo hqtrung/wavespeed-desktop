@@ -117,6 +117,7 @@
     "type": "Loại",
     "basePrice": "Giá cơ bản",
     "openInNewTab": "Mở trong tab mới",
+    "replaceCurrentTab": "Thay thế tab hiện tại",
     "addToFavorites": "Thêm vào yêu thích",
     "removeFromFavorites": "Xóa khỏi yêu thích"
   },

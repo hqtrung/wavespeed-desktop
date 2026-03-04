@@ -117,6 +117,7 @@
     "type": "प्रकार",
     "basePrice": "आधार कीमत",
     "openInNewTab": "नए टैब में खोलें",
+    "replaceCurrentTab": "वर्तमान टैब बदलें",
     "addToFavorites": "पसंदीदा में जोड़ें",
     "removeFromFavorites": "पसंदीदा से हटाएं"
   },

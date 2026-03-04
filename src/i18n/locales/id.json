@@ -117,6 +117,7 @@
     "type": "Tipe",
     "basePrice": "Harga dasar",
     "openInNewTab": "Buka di tab baru",
+    "replaceCurrentTab": "Ganti tab saat ini",
     "addToFavorites": "Tambahkan ke favorit",
     "removeFromFavorites": "Hapus dari favorit"
   },

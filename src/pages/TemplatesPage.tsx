@@ -50,17 +50,22 @@ export function TemplatesPage() {
     "playground",
   );
 
-  const handleUseTemplate = async (template: Template) => {
+  const handleUseTemplate = async (
+    template: Template,
+    mode?: "new" | "replace",
+  ) => {
     if (template.playgroundData) {
       // Increment use count
       await useTemplate(template.id);
       // Navigate to playground with the template's model
+      const modeParam = mode ? `&mode=${mode}` : "";
       navigate(
-        `/playground/${encodeURIComponent(template.playgroundData.modelId)}?template=${template.id}`,
+        `/playground/${encodeURIComponent(template.playgroundData.modelId)}?template=${template.id}${modeParam}`,
       );
     } else if (template.workflowData) {
       // Navigate to workflow editor with template
-      navigate(`/workflow?template=${template.id}`);
+      const modeParam = mode ? `&mode=${mode}` : "";
+      navigate(`/workflow?template=${template.id}${modeParam}`);
     }
   };
 

@@ -117,6 +117,7 @@
     "type": "Tür",
     "basePrice": "Temel fiyat",
     "openInNewTab": "Yeni sekmede aç",
+    "replaceCurrentTab": "Mevcut sekmeyi değiştir",
     "addToFavorites": "Favorilere ekle",
     "removeFromFavorites": "Favorilerden kaldır"
   },

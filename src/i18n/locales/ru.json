@@ -117,6 +117,7 @@
     "type": "Тип",
     "basePrice": "Базовая цена",
     "openInNewTab": "Открыть в новой вкладке",
+    "replaceCurrentTab": "Заменить текущую вкладку",
     "addToFavorites": "Добавить в избранное",
     "removeFromFavorites": "Удалить из избранного"
   },

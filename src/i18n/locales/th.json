@@ -117,6 +117,7 @@
     "type": "ประเภท",
     "basePrice": "ราคาพื้นฐาน",
     "openInNewTab": "เปิดในแท็บใหม่",
+    "replaceCurrentTab": "แทนที่แท็บปัจจุบัน",
     "addToFavorites": "เพิ่มในรายการโปรด",
     "removeFromFavorites": "ลบจากรายการโปรด"
   },

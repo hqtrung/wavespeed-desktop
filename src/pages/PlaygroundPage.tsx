@@ -152,7 +152,7 @@ export function PlaygroundPage() {
   const [mobileView, setMobileView] = useState<"config" | "output">("config");
 
   // Resizable left panel
-  const [leftPanelWidth, setLeftPanelWidth] = useState(300);
+  const [leftPanelWidth, setLeftPanelWidth] = useState(360);
   const isDraggingRef = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const handleResizeStart = useCallback(
@@ -567,10 +567,31 @@ export function PlaygroundPage() {
 
   // Templates panel: use a template
   const handleUseTemplateFromPanel = useCallback(
-    (template: import("@/types/template").Template) => {
+    (
+      template: import("@/types/template").Template,
+      mode?: "new" | "replace",
+    ) => {
       if (template.playgroundData) {
+        // Determine effective mode:
+        // - explicit "replace" from overlay button
+        // - explicit "new" from overlay button
+        // - no mode (card click): default to "new" unless no active tab exists
+        // - special case: if active tab has no model selected, auto-replace (fill empty tab)
+        let effectiveMode: "new" | "replace";
+        if (mode) {
+          effectiveMode = mode;
+        } else {
+          effectiveMode = "new";
+        }
+        // Auto-replace empty tab (no model selected) even when mode is "new"
+        if (effectiveMode === "new" && activeTab && !activeTab.selectedModel) {
+          effectiveMode = "replace";
+        }
+
+        const shouldCreateNewTab = effectiveMode === "new" || !activeTab;
+
         flushSync(() => {
-          if (!activeTab) {
+          if (shouldCreateNewTab) {
             const model = template.playgroundData!.modelId
               ? models.find(
                   (m) => m.model_id === template.playgroundData!.modelId,
@@ -578,9 +599,10 @@ export function PlaygroundPage() {
               : undefined;
             createTab(model);
           } else {
+            // Replace current tab
             if (
               template.playgroundData!.modelId &&
-              activeTab.selectedModel?.model_id !==
+              activeTab!.selectedModel?.model_id !==
                 template.playgroundData!.modelId
             ) {
               const model = models.find(
@@ -601,16 +623,11 @@ export function PlaygroundPage() {
         }
 
         // For new tab: set form values after tab is active
-        if (!activeTab) {
+        if (shouldCreateNewTab) {
           setTimeout(() => {
             setFormValues(template.playgroundData!.values);
           }, 0);
         }
-
-        toast({
-          title: t("playground.templateLoaded"),
-          description: t("playground.loadedTemplate", { name: template.name }),
-        });
       }
     },
     [
@@ -907,6 +924,11 @@ export function PlaygroundPage() {
                         tabs.map((tab) => (
                           <div
                             key={tab.id}
+                            title={
+                              tab.selectedModel?.name
+                                ? formatModelDisplay(tab.selectedModel.name)
+                                : t("playground.tabs.newTab")
+                            }
                             onClick={() => {
                               handleTabClick(tab.id);
                               setTabListOpen(false);
@@ -1002,6 +1024,11 @@ export function PlaygroundPage() {
                         onClick={() => {
                           handleTabClick(tab.id);
                         }}
+                        title={
+                          tab.selectedModel?.name
+                            ? formatModelDisplay(tab.selectedModel.name)
+                            : t("playground.tabs.newTab")
+                        }
                         className={cn(
                           "group relative flex h-8 items-center gap-1.5 px-3 text-xs transition-colors cursor-pointer select-none min-w-[60px] max-w-[180px] hover:bg-primary/10 dark:hover:bg-muted/60",
                           dragTabId === tab.id && "opacity-40",

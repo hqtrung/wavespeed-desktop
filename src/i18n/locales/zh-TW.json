@@ -117,6 +117,7 @@
     "type": "類型",
     "basePrice": "基礎價格",
     "openInNewTab": "在新分頁開啟",
+    "replaceCurrentTab": "替換當前分頁",
     "addToFavorites": "加入收藏",
     "removeFromFavorites": "取消收藏"
   },

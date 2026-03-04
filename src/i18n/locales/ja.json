@@ -117,6 +117,7 @@
     "type": "タイプ",
     "basePrice": "基本価格",
     "openInNewTab": "新しいタブで開く",
+    "replaceCurrentTab": "現在のタブを置換",
     "addToFavorites": "お気に入りに追加",
     "removeFromFavorites": "お気に入りから削除"
   },

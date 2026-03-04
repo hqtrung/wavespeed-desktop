@@ -77,7 +77,12 @@ export function BatchControls({
             <Play className="mr-2 h-4 w-4" />
             {displayLabel}
             {price && (
-              <span className="ml-1.5 text-xs opacity-70">${price}</span>
+              <span className="ml-1.5 text-xs opacity-70">
+                $
+                {enabled && repeatCount > 1
+                  ? (parseFloat(price) * repeatCount).toFixed(4)
+                  : price}
+              </span>
             )}
           </>
         )}

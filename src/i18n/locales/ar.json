@@ -117,6 +117,7 @@
     "type": "النوع",
     "basePrice": "السعر الأساسي",
     "openInNewTab": "فتح في علامة تبويب جديدة",
+    "replaceCurrentTab": "استبدال علامة التبويب الحالية",
     "addToFavorites": "إضافة إلى المفضلة",
     "removeFromFavorites": "إزالة من المفضلة"
   },

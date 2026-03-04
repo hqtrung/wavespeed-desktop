@@ -55,7 +55,18 @@ const nextKey = () => ++keyCounter;
 
 export function Layout() {
   const { t } = useTranslation();
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    const stored = localStorage.getItem("sidebarCollapsed");
+    return stored !== null ? stored === "true" : false;
+  });
+
+  const toggleSidebar = useCallback(() => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem("sidebarCollapsed", String(next));
+      return next;
+    });
+  }, []);
   const navigate = useNavigate();
   const location = useLocation();
   const hasShownUpdateToast = useRef(false);
@@ -390,7 +401,7 @@ export function Layout() {
           <div className="flex flex-1 overflow-hidden">
             <Sidebar
               collapsed={sidebarCollapsed}
-              onToggle={() => setSidebarCollapsed(prev => !prev)}
+              onToggle={toggleSidebar}
               lastFreeToolsPage={lastFreeToolsPage}
               isMobileOpen={false}
               onMobileClose={() => {}}

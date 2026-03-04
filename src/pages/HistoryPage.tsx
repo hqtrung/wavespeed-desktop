@@ -51,7 +51,6 @@ import {
   Eye,
   EyeOff,
   Trash2,
-  Sparkles,
   CheckSquare,
   History,
 } from "lucide-react";
@@ -317,13 +316,6 @@ export function HistoryPage() {
   }, [page, statusFilter]);
 
   const maxSelectablePages = 100;
-  const pageOptions = Array.from(
-    { length: maxSelectablePages },
-    (_, index) => index + 1,
-  );
-  const displayStart = items.length === 0 ? 0 : (page - 1) * pageSize + 1;
-  const displayEnd =
-    items.length === 0 ? 0 : (page - 1) * pageSize + items.length;
 
   useEffect(() => {
     if (page > maxSelectablePages) {

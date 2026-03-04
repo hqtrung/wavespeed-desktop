@@ -3,7 +3,6 @@ import { useTranslation } from "react-i18next";
 import { Search, Check, X, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fuzzySearch } from "@/lib/fuzzySearch";
-import { Label } from "@/components/ui/label";
 import type { Model } from "@/types/model";
 
 interface ModelSelectorProps {

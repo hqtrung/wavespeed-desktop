@@ -34,7 +34,6 @@ export function ResultPanel({
   batchTotalCount,
   batchQueue,
   onClearBatch,
-  batchPreviewInputs,
   historyIndex,
   historyLength,
   onNavigateHistory,

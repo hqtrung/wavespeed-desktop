@@ -4,10 +4,9 @@
  * Row, LinkedBadge, ConnectedInputControl, LockIcon, UploadStatusBadge,
  * ToggleSwitch, NumberInput, FileBtn, Tip, SizeInput, Inline3DViewer
  */
-import React, { useRef, useEffect, useState } from "react";
+import React, { useRef, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useExecutionStore } from "../../../stores/execution.store";
-import { useWorkflowStore } from "../../../stores/workflow.store";
 
 /* ══════════════════════════════════════════════════════════════════════
    Row — simple padding wrapper for parameter rows

@@ -24,12 +24,9 @@ import {
   X,
   Save,
   FolderHeart,
-  Gamepad2,
   Sparkles,
 } from "lucide-react";
 import {
-  isUrl,
-  getUrlExtension,
   isImageUrl,
   isVideoUrl,
   isAudioUrl,
@@ -56,12 +53,10 @@ const mobileDownload = async (
 ): Promise<{ success: boolean; error?: string }> => {
   try {
     // Dynamic imports for Capacitor modules (vite-ignore to prevent desktop build errors)
-    const { CapacitorHttp } = await import(
-      /* @vite-ignore */ "@capacitor/core"
-    );
-    const { Filesystem, Directory } = await import(
-      /* @vite-ignore */ "@capacitor/filesystem"
-    );
+    // @ts-ignore
+    const { CapacitorHttp } = await import(/* @vite-ignore */ "@capacitor/core");
+    // @ts-ignore
+    const { Filesystem, Directory } = await import(/* @vite-ignore */ "@capacitor/filesystem");
 
     // Fetch file using CapacitorHttp (bypasses CORS)
     const response = await CapacitorHttp.get({
@@ -119,8 +114,6 @@ export function OutputDisplay({
   error,
   isLoading,
   modelId,
-  hideGameButton,
-  gridLayout,
   historyLength,
   onNavigateHistory,
 }: OutputDisplayProps) {
@@ -138,7 +131,7 @@ export function OutputDisplay({
   const [gameEndedWithResults, setGameEndedWithResults] = useState(false);
   const prevOutputsLengthRef = useRef(0);
 
-  const { settings, loadSettings, saveAsset, hasAssetForPrediction } =
+  const { settings, loadSettings, saveAsset } =
     useAssetsStore();
 
   // Build list of media outputs for fullscreen navigation
@@ -414,9 +407,8 @@ export function OutputDisplay({
   const handleOpenExternal = async (url: string) => {
     if (isCapacitorNative()) {
       try {
-        const { Browser } = await import(
-          /* @vite-ignore */ "@capacitor/browser"
-        );
+        // @ts-ignore
+        const { Browser } = await import(/* @vite-ignore */ "@capacitor/browser");
         await Browser.open({ url });
       } catch {
         window.open(url, "_blank");

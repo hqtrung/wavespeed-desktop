@@ -294,11 +294,6 @@ export function AssetsPage() {
     setFilter((f) => ({ ...f, favoritesOnly: checked }));
   }, []);
 
-  const handleClearFilters = useCallback(() => {
-    setFilter({});
-    setSearchQuery("");
-  }, []);
-
   const handleToggleFavorite = useCallback(
     async (asset: AssetMetadata) => {
       await updateAsset(asset.id, { favorite: !asset.favorite });

@@ -22,7 +22,6 @@ import {
   Upload,
   GitBranch,
   PlayCircle,
-  LayoutTemplate,
   FolderOpen,
 } from "lucide-react";
 import type { Template } from "@/types/template";

@@ -1,5 +1,4 @@
 import { useMemo, useEffect, useState, useRef } from "react";
-import { useTranslation } from "react-i18next";
 import type { Model } from "@/types/model";
 import {
   schemaToFormFields,
@@ -37,7 +36,6 @@ export function DynamicForm({
   collapsible = false,
   scrollable = true,
 }: DynamicFormProps) {
-  const { t } = useTranslation();
   // Track which hidden fields are enabled
   const [enabledHiddenFields, setEnabledHiddenFields] = useState<Set<string>>(
     new Set(),

@@ -205,7 +205,6 @@ export function WorkflowPage() {
     toggleNodePalette,
     toggleWorkflowPanel,
     toggleWorkflowResultsPanel,
-    selectedNodeId,
     previewSrc,
     previewItems,
     previewIndex,
@@ -218,7 +217,7 @@ export function WorkflowPage() {
   } = useUIStore();
   const [showTemplateDialog, setShowTemplateDialog] = useState(false);
   const guide = useWorkflowGuide();
-  const [guideStepKey, setGuideStepKey] = useState<string | null>(null);
+  const [, setGuideStepKey] = useState<string | null>(null);
   const { cancelAll, activeExecutions } = useExecutionStore();
   const initListeners = useExecutionStore((s) => s.initListeners);
   const wasRunning = useExecutionStore((s) => s._wasRunning);
@@ -330,8 +329,8 @@ export function WorkflowPage() {
   const [activeTabId, setActiveTabId] = useState(
     () => _initialSession.activeTabId,
   );
-  const [startupSessionReady, setStartupSessionReady] = useState(true);
-  const [restoredFromPersistedSession, setRestoredFromPersistedSession] =
+  const [startupSessionReady] = useState(true);
+  const [restoredFromPersistedSession] =
     useState(_initialSession.restored);
   const [hasRestoredLastWorkflow, setHasRestoredLastWorkflow] = useState(false);
 
@@ -2563,13 +2562,10 @@ let _workflowListCache: Array<{
   name: string;
   updatedAt: string;
 }> | null = null;
-let _workflowListCacheTime = 0;
-const CACHE_TTL = 30_000; // refresh after 30 seconds
 
 /** Call this to invalidate the cache after save/create/delete */
 export function invalidateWorkflowListCache() {
-  _workflowListCache = null;
-  _workflowListCacheTime = 0;
+  if (_workflowListCache) _workflowListCache = null;
 }
 
 /* ── Monitor Toggle Button ─────────────────────────────────────────── */

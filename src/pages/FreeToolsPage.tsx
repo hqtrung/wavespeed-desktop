@@ -32,7 +32,6 @@ import faceSwapperImg from "../../build/images/FaceSwapper.jpeg";
 import backgroundRemoverImg from "../../build/images/BackgroundRemover.jpeg";
 import imageEraserImg from "../../build/images/ImageEraser.jpeg";
 import SegmentAnythingImg from "../../build/images/SegmentAnything.png";
-import freeToolImg from "../../build/images/FreeTool.jpeg";
 import videoConverterImg from "../../build/images/VideoConverter.png";
 import audioConverterImg from "../../build/images/AudioConverter.png";
 import imageConverterImg from "../../build/images/ImageConverter.png";

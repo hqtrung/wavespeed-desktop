@@ -725,13 +725,13 @@ function CustomNodeComponent({
           <button
             type="button"
             onClick={toggleCollapsed}
-            className="nodrag nopan flex-shrink-0 p-0.5 rounded hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
+            className="nodrag nopan flex-shrink-0 p-1 rounded hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
             title={collapsed ? t("workflow.expandNode", "Expand") : t("workflow.collapseNode", "Collapse")}
           >
             {collapsed ? (
-              <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
+              <ChevronDown className="w-4 h-4 text-muted-foreground" />
             ) : (
-              <ChevronUp className="w-3.5 h-3.5 text-muted-foreground" />
+              <ChevronUp className="w-4 h-4 text-muted-foreground" />
             )}
           </button>
           {NodeIcon && (

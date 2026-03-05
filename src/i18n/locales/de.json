@@ -1141,6 +1141,8 @@
     "outputLowercase": "Ausgabe",
     "expandNode": "Erweitern",
     "collapseNode": "Einklappen",
+    "collapseAll": "Alle Einklappen",
+    "expandAll": "Alle Ausklappen",
     "invalidUrl": "Ungültige URL",
     "removeLast": "Letztes entfernen",
     "enterField": "{{field}} eingeben...",

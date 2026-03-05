@@ -1140,6 +1140,8 @@
     "outputLowercase": "Вывод",
     "expandNode": "Развернуть",
     "collapseNode": "Свернуть",
+    "collapseAll": "Свернуть все",
+    "expandAll": "Развернуть все",
     "invalidUrl": "Недействительный URL",
     "removeLast": "Удалить последний",
     "enterField": "Введите {{field}}...",

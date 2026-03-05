@@ -1140,6 +1140,8 @@
     "outputLowercase": "Çıktı",
     "expandNode": "Genişlet",
     "collapseNode": "Daralt",
+    "collapseAll": "Tümünü Daralt",
+    "expandAll": "Tümünü Genişlet",
     "invalidUrl": "Geçersiz URL",
     "removeLast": "Sonuncuyu kaldır",
     "enterField": "{{field}} girin...",

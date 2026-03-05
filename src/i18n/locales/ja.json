@@ -1101,6 +1101,8 @@
     "outputLowercase": "出力",
     "expandNode": "展開",
     "collapseNode": "折りたたむ",
+    "collapseAll": "すべて折りたたむ",
+    "expandAll": "すべて展開",
     "invalidUrl": "無効な URL",
     "removeLast": "最後の項目を削除",
     "enterField": "{{field}} を入力...",

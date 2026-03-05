@@ -1098,6 +1098,8 @@
     "outputLowercase": "輸出",
     "expandNode": "展開",
     "collapseNode": "收合",
+    "collapseAll": "全部收合",
+    "expandAll": "全部展開",
     "invalidUrl": "無效 URL",
     "removeLast": "移除最後一項",
     "enterField": "輸入 {{field}}...",

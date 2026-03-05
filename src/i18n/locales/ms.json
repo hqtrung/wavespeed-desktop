@@ -1140,6 +1140,8 @@
     "outputLowercase": "Output",
     "expandNode": "Kembang",
     "collapseNode": "Kuncupkan",
+    "collapseAll": "Kuncupkan Semua",
+    "expandAll": "Kembangkan Semua",
     "invalidUrl": "URL tidak sah",
     "removeLast": "Buang yang terakhir",
     "enterField": "Masukkan {{field}}...",

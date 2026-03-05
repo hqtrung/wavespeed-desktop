@@ -1140,6 +1140,8 @@
     "outputLowercase": "الإخراج",
     "expandNode": "توسيع",
     "collapseNode": "طي",
+    "collapseAll": "طي الكل",
+    "expandAll": "توسيع الكل",
     "invalidUrl": "URL غير صالح",
     "removeLast": "إزالة האחר",
     "enterField": "أدخل {{field}}...",

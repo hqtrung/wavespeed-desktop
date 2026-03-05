@@ -1141,6 +1141,8 @@
     "outputLowercase": "Sortie",
     "expandNode": "Développer",
     "collapseNode": "Réduire",
+    "collapseAll": "Tout Réduire",
+    "expandAll": "Tout Développer",
     "invalidUrl": "URL invalide",
     "removeLast": "Supprimer le dernier",
     "enterField": "Entrer {{field}}...",

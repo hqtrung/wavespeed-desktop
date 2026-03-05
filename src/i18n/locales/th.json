@@ -1140,6 +1140,8 @@
     "outputLowercase": "ผลลัพธ์",
     "expandNode": "ขยาย",
     "collapseNode": "ยุบ",
+    "collapseAll": "ยุบทั้งหมด",
+    "expandAll": "ขยายทั้งหมด",
     "invalidUrl": "URL ไม่ถูกต้อง",
     "removeLast": "ลบรายการสุดท้าย",
     "enterField": "ใส่{{field}}...",

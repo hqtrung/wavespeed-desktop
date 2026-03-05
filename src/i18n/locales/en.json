@@ -1200,6 +1200,8 @@
     "outputLowercase": "output",
     "expandNode": "Expand",
     "collapseNode": "Collapse",
+    "collapseAll": "Collapse All",
+    "expandAll": "Expand All",
     "invalidUrl": "Invalid URL",
     "removeLast": "Remove last",
     "enterField": "Enter {{field}}...",

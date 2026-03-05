@@ -1140,6 +1140,8 @@
     "outputLowercase": "Đầu ra",
     "expandNode": "Mở rộng",
     "collapseNode": "Thu gọn",
+    "collapseAll": "Thu gọn tất cả",
+    "expandAll": "Mở rộng tất cả",
     "invalidUrl": "URL không hợp lệ",
     "removeLast": "Xóa mục cuối",
     "enterField": "Nhập {{field}}...",

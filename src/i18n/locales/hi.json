@@ -1140,6 +1140,8 @@
     "outputLowercase": "आउटपुट",
     "expandNode": "विस्तार करें",
     "collapseNode": "संक्षिप्त करें",
+    "collapseAll": "सभी संक्षिप्त करें",
+    "expandAll": "सभी विस्तार करें",
     "invalidUrl": "अमान्य URL",
     "removeLast": "अंतिम हटाएं",
     "enterField": "{{field}} दर्ज करें...",

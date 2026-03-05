@@ -1140,6 +1140,8 @@
     "outputLowercase": "Salida",
     "expandNode": "Expandir",
     "collapseNode": "Contraer",
+    "collapseAll": "Contraer Todo",
+    "expandAll": "Expandir Todo",
     "invalidUrl": "URL no válida",
     "removeLast": "Quitar último",
     "enterField": "Introducir {{field}}...",

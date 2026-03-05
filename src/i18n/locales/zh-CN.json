@@ -1185,6 +1185,8 @@
     "outputLowercase": "输出",
     "expandNode": "展开",
     "collapseNode": "收起",
+    "collapseAll": "全部收起",
+    "expandAll": "全部展开",
     "invalidUrl": "无效 URL",
     "removeLast": "移除最后一项",
     "enterField": "输入 {{field}}...",

@@ -38,7 +38,9 @@
     "add": "Add",
     "saving": "Saving...",
     "showMore": "Show more",
-    "showLess": "Show less"
+    "showLess": "Show less",
+    "show": "Show",
+    "hide": "Hide"
   },
   "nav": {
     "home": "Home",
@@ -290,7 +292,8 @@
       "allModels": "All Models",
       "favorites": "Favorites",
       "noFavorites": "No favorites yet — star a model to save it here",
-      "searchResults": "{{count}} results"
+      "searchResults": "{{count}} results",
+      "filterByType": "Filter by type"
     },
     "recentGenerations": "Recent Generations",
     "viewAll": "View All"

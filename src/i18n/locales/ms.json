@@ -38,7 +38,9 @@
     "add": "Add",
     "saving": "Saving...",
     "showMore": "Tunjuk lagi",
-    "showLess": "Tunjuk kurang"
+    "showLess": "Tunjuk kurang",
+    "show": "Tunjuk",
+    "hide": "Sembunyikan"
   },
   "nav": {
     "home": "Laman Utama",
@@ -268,7 +270,28 @@
       "title": "Sejarah",
       "openInNewTab": "Buka di tab baharu",
       "useSettings": "Gunakan tetapan ini"
-    }
+    },
+    "rightPanel": {
+      "explore": "Terokai",
+      "allModels": "Semua Model",
+      "models": "Model",
+      "featuredModels": "Model Pilihan",
+      "resultsHub": "Hab Hasil",
+      "result": "Hasil",
+      "templates": "Templat",
+      "assets": "Aset Saya"
+    },
+    "explore": {
+      "searchPlaceholder": "Cari model, LoRA dan gaya...",
+      "all": "Semua",
+      "allModels": "Semua Model",
+      "favorites": "Kegemaran",
+      "noFavorites": "Tiada kegemaran lagi — klik bintang untuk simpan model",
+      "searchResults": "{{count}} hasil",
+      "filterByType": "Tapis mengikut jenis"
+    },
+    "recentGenerations": "Penjanaan terkini",
+    "viewAll": "Lihat semua"
   },
   "history": {
     "title": "Sejarah",

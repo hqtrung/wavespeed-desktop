@@ -38,7 +38,9 @@
     "add": "Add",
     "saving": "Saving...",
     "showMore": "Tampilkan lebih",
-    "showLess": "Tampilkan sedikit"
+    "showLess": "Tampilkan sedikit",
+    "show": "Tampilkan",
+    "hide": "Sembunyikan"
   },
   "nav": {
     "home": "Beranda",
@@ -268,7 +270,28 @@
       "title": "Riwayat",
       "openInNewTab": "Buka di tab baru",
       "useSettings": "Gunakan pengaturan ini"
-    }
+    },
+    "rightPanel": {
+      "explore": "Jelajahi",
+      "allModels": "Semua Model",
+      "models": "Model",
+      "featuredModels": "Model Unggulan",
+      "resultsHub": "Hub Hasil",
+      "result": "Hasil",
+      "templates": "Templat",
+      "assets": "Aset Saya"
+    },
+    "explore": {
+      "searchPlaceholder": "Cari model, LoRA, dan gaya...",
+      "all": "Semua",
+      "allModels": "Semua Model",
+      "favorites": "Favorit",
+      "noFavorites": "Belum ada favorit — klik bintang untuk menyimpan model",
+      "searchResults": "{{count}} hasil",
+      "filterByType": "Filter menurut jenis"
+    },
+    "recentGenerations": "Generasi terbaru",
+    "viewAll": "Tampilkan semua"
   },
   "history": {
     "title": "Riwayat",

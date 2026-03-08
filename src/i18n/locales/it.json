@@ -38,7 +38,9 @@
     "add": "Add",
     "saving": "Saving...",
     "showMore": "Mostra di più",
-    "showLess": "Mostra meno"
+    "showLess": "Mostra meno",
+    "show": "Mostra",
+    "hide": "Nascondi"
   },
   "nav": {
     "home": "Home",
@@ -268,7 +270,28 @@
       "title": "Cronologia",
       "openInNewTab": "Apri in una nuova scheda",
       "useSettings": "Usa queste impostazioni"
-    }
+    },
+    "rightPanel": {
+      "explore": "Esplora",
+      "allModels": "Tutti i modelli",
+      "models": "Modelli",
+      "featuredModels": "Modelli in evidenza",
+      "resultsHub": "Hub risultati",
+      "result": "Risultato",
+      "templates": "Template",
+      "assets": "Le mie risorse"
+    },
+    "explore": {
+      "searchPlaceholder": "Cerca modelli, LoRA e stili...",
+      "all": "Tutti",
+      "allModels": "Tutti i modelli",
+      "favorites": "Preferiti",
+      "noFavorites": "Nessun preferito ancora — clicca sulla stella per salvare un modello",
+      "searchResults": "{{count}} risultati",
+      "filterByType": "Filtra per tipo"
+    },
+    "recentGenerations": "Generazioni recenti",
+    "viewAll": "Visualizza tutto"
   },
   "history": {
     "title": "Cronologia",

@@ -5,7 +5,7 @@ import { apiClient } from "@/api/client";
 import { useApiKeyStore } from "@/stores/apiKeyStore";
 import { usePlaygroundStore } from "@/stores/playgroundStore";
 import { useModelsStore } from "@/stores/modelsStore";
-import { usePredictionInputsStore } from "@mobile/stores/predictionInputsStore";
+import { usePredictionInputsStore } from "@/stores/predictionInputsStore";
 import { usePageActive } from "@/hooks/usePageActive";
 import { useDeferredClose } from "@/hooks/useDeferredClose";
 import type { HistoryItem } from "@/types/prediction";

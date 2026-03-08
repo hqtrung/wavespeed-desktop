@@ -38,7 +38,9 @@
     "add": "Add",
     "saving": "Saving...",
     "showMore": "عرض المزيد",
-    "showLess": "عرض أقل"
+    "showLess": "عرض أقل",
+    "show": "عرض",
+    "hide": "إخفاء"
   },
   "nav": {
     "home": "الرئيسية",
@@ -268,7 +270,28 @@
       "title": "السجل",
       "openInNewTab": "فتح في علامة تبويب جديدة",
       "useSettings": "استخدام هذه الإعدادات"
-    }
+    },
+    "rightPanel": {
+      "explore": "استكشف",
+      "allModels": "جميع النماذج",
+      "models": "النماذج",
+      "featuredModels": "النماذج المميزة",
+      "resultsHub": "مركز النتائج",
+      "result": "النتيجة",
+      "templates": "القوالب",
+      "assets": "أصولي"
+    },
+    "explore": {
+      "searchPlaceholder": "البحث عن النماذج وLoRAs والأنماط...",
+      "all": "الكل",
+      "allModels": "جميع النماذج",
+      "favorites": "المفضلة",
+      "noFavorites": "لا مفضلات بعد — انقر على النجمة لحفظ نموذج",
+      "searchResults": "{{count}} نتائج",
+      "filterByType": "تصفية حسب النوع"
+    },
+    "recentGenerations": "أحدث التوليدات",
+    "viewAll": "عرض الكل"
   },
   "history": {
     "title": "السجل",

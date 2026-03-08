@@ -38,7 +38,9 @@
     "add": "Add",
     "saving": "Saving...",
     "showMore": "Показать больше",
-    "showLess": "Показать меньше"
+    "showLess": "Показать меньше",
+    "show": "Показать",
+    "hide": "Скрыть"
   },
   "nav": {
     "home": "Главная",
@@ -268,7 +270,28 @@
       "title": "История",
       "openInNewTab": "Открыть в новой вкладке",
       "useSettings": "Использовать эти настройки"
-    }
+    },
+    "rightPanel": {
+      "explore": "Исследовать",
+      "allModels": "Все модели",
+      "models": "Модели",
+      "featuredModels": "Избранные модели",
+      "resultsHub": "Центр результатов",
+      "result": "Результат",
+      "templates": "Шаблоны",
+      "assets": "Мои ресурсы"
+    },
+    "explore": {
+      "searchPlaceholder": "Поиск моделей, LoRA и стилей...",
+      "all": "Все",
+      "allModels": "Все модели",
+      "favorites": "Избранное",
+      "noFavorites": "Пока нет избранного — нажмите на звёздочку, чтобы сохранить модель",
+      "searchResults": "{{count}} результатов",
+      "filterByType": "Фильтр по типу"
+    },
+    "recentGenerations": "Недавние генерации",
+    "viewAll": "Показать все"
   },
   "history": {
     "title": "История",

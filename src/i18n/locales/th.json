@@ -38,7 +38,9 @@
     "add": "Add",
     "saving": "Saving...",
     "showMore": "แสดงเพิ่มเติม",
-    "showLess": "แสดงน้อยลง"
+    "showLess": "แสดงน้อยลง",
+    "show": "แสดง",
+    "hide": "ซ่อน"
   },
   "nav": {
     "home": "หน้าแรก",
@@ -268,7 +270,28 @@
       "title": "ประวัติ",
       "openInNewTab": "เปิดในแท็บใหม่",
       "useSettings": "ใช้การตั้งค่านี้"
-    }
+    },
+    "rightPanel": {
+      "explore": "สำรวจ",
+      "allModels": "โมเดลทั้งหมด",
+      "models": "โมเดล",
+      "featuredModels": "โมเดลแนะนำ",
+      "resultsHub": "ศูนย์ผลลัพธ์",
+      "result": "ผลลัพธ์",
+      "templates": "เทมเพลต",
+      "assets": "สินทรัพย์ของฉัน"
+    },
+    "explore": {
+      "searchPlaceholder": "ค้นหาโมเดล LoRA และสไตล์...",
+      "all": "ทั้งหมด",
+      "allModels": "โมเดลทั้งหมด",
+      "favorites": "รายการโปรด",
+      "noFavorites": "ยังไม่มีรายการโปรด — คลิกดาวเพื่อบันทึกโมเดล",
+      "searchResults": "{{count}} ผลลัพธ์",
+      "filterByType": "กรองตามประเภท"
+    },
+    "recentGenerations": "การสร้างล่าสุด",
+    "viewAll": "ดูทั้งหมด"
   },
   "history": {
     "title": "ประวัติ",

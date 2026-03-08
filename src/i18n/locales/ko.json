@@ -38,7 +38,9 @@
     "add": "Add",
     "saving": "Saving...",
     "showMore": "더 보기",
-    "showLess": "접기"
+    "showLess": "접기",
+    "show": "표시",
+    "hide": "숨기기"
   },
   "nav": {
     "home": "홈",
@@ -268,7 +270,28 @@
       "title": "기록",
       "openInNewTab": "새 탭에서 열기",
       "useSettings": "이 설정 사용"
-    }
+    },
+    "rightPanel": {
+      "explore": "탐색",
+      "allModels": "모든 모델",
+      "models": "모델",
+      "featuredModels": "추천 모델",
+      "resultsHub": "결과 허브",
+      "result": "결과",
+      "templates": "템플릿",
+      "assets": "내 에셋"
+    },
+    "explore": {
+      "searchPlaceholder": "모델, LoRA 및 스타일 검색...",
+      "all": "전체",
+      "allModels": "모든 모델",
+      "favorites": "즐겨찾기",
+      "noFavorites": "아직 즐겨찾기가 없습니다 — 별을 클릭하여 모델 저장",
+      "searchResults": "{{count}}개 결과",
+      "filterByType": "유형별 필터"
+    },
+    "recentGenerations": "최근 생성",
+    "viewAll": "전체 보기"
   },
   "history": {
     "title": "기록",

@@ -18,7 +18,7 @@ import { useModelsStore } from "@/stores/modelsStore";
 import { useApiKeyStore } from "@/stores/apiKeyStore";
 import { apiClient } from "@/api/client";
 import { useTemplateStore } from "@/stores/templateStore";
-import { usePredictionInputsStore } from "@mobile/stores/predictionInputsStore";
+import { usePredictionInputsStore } from "@/stores/predictionInputsStore";
 import { usePageActive } from "@/hooks/usePageActive";
 import { DynamicForm } from "@/components/playground/DynamicForm";
 import { ModelSelector } from "@/components/playground/ModelSelector";

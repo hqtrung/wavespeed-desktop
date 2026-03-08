@@ -38,7 +38,9 @@
     "add": "Add",
     "saving": "Saving...",
     "showMore": "Daha fazla göster",
-    "showLess": "Daha az göster"
+    "showLess": "Daha az göster",
+    "show": "Göster",
+    "hide": "Gizle"
   },
   "nav": {
     "home": "Ana Sayfa",
@@ -268,7 +270,28 @@
       "title": "Geçmiş",
       "openInNewTab": "Yeni sekmede aç",
       "useSettings": "Bu ayarları kullan"
-    }
+    },
+    "rightPanel": {
+      "explore": "Keşfet",
+      "allModels": "Tüm Modeller",
+      "models": "Modeller",
+      "featuredModels": "Öne Çıkan Modeller",
+      "resultsHub": "Sonuç Merkezi",
+      "result": "Sonuç",
+      "templates": "Şablonlar",
+      "assets": "Varlıklarım"
+    },
+    "explore": {
+      "searchPlaceholder": "Model, LoRA ve stil ara...",
+      "all": "Tümü",
+      "allModels": "Tüm Modeller",
+      "favorites": "Favoriler",
+      "noFavorites": "Henüz favori yok — model kaydetmek için yıldıza tıklayın",
+      "searchResults": "{{count}} sonuç",
+      "filterByType": "Türe göre filtrele"
+    },
+    "recentGenerations": "Son oluşturmalar",
+    "viewAll": "Tümünü görüntüle"
   },
   "history": {
     "title": "Geçmiş",

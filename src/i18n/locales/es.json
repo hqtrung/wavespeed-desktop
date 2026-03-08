@@ -38,7 +38,9 @@
     "add": "Add",
     "saving": "Saving...",
     "showMore": "Mostrar más",
-    "showLess": "Mostrar menos"
+    "showLess": "Mostrar menos",
+    "show": "Mostrar",
+    "hide": "Ocultar"
   },
   "nav": {
     "home": "Inicio",
@@ -268,7 +270,28 @@
       "title": "Historial",
       "openInNewTab": "Abrir en nueva pestaña",
       "useSettings": "Usar esta configuración"
-    }
+    },
+    "rightPanel": {
+      "explore": "Explorar",
+      "allModels": "Todos los modelos",
+      "models": "Modelos",
+      "featuredModels": "Modelos destacados",
+      "resultsHub": "Centro de resultados",
+      "result": "Resultado",
+      "templates": "Plantillas",
+      "assets": "Mis recursos"
+    },
+    "explore": {
+      "searchPlaceholder": "Buscar modelos, LoRAs y estilos...",
+      "all": "Todos",
+      "allModels": "Todos los modelos",
+      "favorites": "Favoritos",
+      "noFavorites": "Aún no hay favoritos — haz clic en la estrella para guardar un modelo",
+      "searchResults": "{{count}} resultados",
+      "filterByType": "Filtrar por tipo"
+    },
+    "recentGenerations": "Generaciones recientes",
+    "viewAll": "Ver todo"
   },
   "history": {
     "title": "Historial",

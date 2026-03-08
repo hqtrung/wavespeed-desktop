@@ -38,7 +38,9 @@
     "add": "添加",
     "saving": "保存中...",
     "showMore": "展开更多",
-    "showLess": "收起"
+    "showLess": "收起",
+    "show": "显示",
+    "hide": "隐藏"
   },
   "nav": {
     "home": "首页",
@@ -279,8 +281,10 @@
       "allModels": "所有模型",
       "models": "模型",
       "featuredModels": "精选模型",
+      "resultsHub": "结果中心",
+      "result": "结果",
       "templates": "模板",
-      "result": "结果"
+      "assets": "我的资产"
     },
     "explore": {
       "searchPlaceholder": "搜索模型、LoRA 和风格...",
@@ -288,8 +292,11 @@
       "allModels": "所有模型",
       "favorites": "收藏",
       "noFavorites": "暂无收藏 — 点击星标收藏模型",
-      "searchResults": "{{count}} 个结果"
-    }
+      "searchResults": "{{count}} 个结果",
+      "filterByType": "按类型筛选"
+    },
+    "recentGenerations": "最近生成",
+    "viewAll": "查看全部"
   },
   "history": {
     "title": "历史记录",

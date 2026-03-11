@@ -405,8 +405,9 @@ export function WorkflowCanvas({ nodeDefs = [] }: WorkflowCanvasProps) {
           ? event.metaKey
           : event.ctrlKey;
 
-      // Ctrl+A: select all nodes — works even when input is focused
+      // Ctrl+A: select all nodes — but let inputs handle their own select-all
       if (ctrlOrCmd && event.key === "a") {
+        if (isInputFocused) return; // let the browser select text in the input
         event.preventDefault();
         // Update our store
         selectNodes(nodes.map((n) => n.id));

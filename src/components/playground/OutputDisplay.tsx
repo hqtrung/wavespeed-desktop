@@ -324,17 +324,13 @@ export function OutputDisplay({
             title: t("playground.savedToAssets"),
             description: t("playground.savedToAssetsDesc"),
           });
-        } else {
-          toast({
-            title: t("common.error"),
-            description: t("playground.saveFailed"),
-            variant: "destructive",
-          });
         }
-      } catch {
+      } catch (err) {
+        const msg =
+          err instanceof Error ? err.message : t("playground.saveFailed");
         toast({
           title: t("common.error"),
-          description: t("playground.saveFailed"),
+          description: msg,
           variant: "destructive",
         });
       } finally {

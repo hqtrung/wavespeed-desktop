@@ -371,7 +371,7 @@ export const useAssetsStore = create<AssetsState>((set, get) => ({
 
         return metadata;
       }
-      return null;
+      throw new Error(result.error || "Download failed");
     }
 
     // Browser fallback: store URL reference only

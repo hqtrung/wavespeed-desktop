@@ -105,6 +105,7 @@ export function ModelSelector({
   const containerRef = useRef<HTMLDivElement>(null);
   const variantRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const selectedModel = models.find((m) => m.model_id === value);
@@ -199,6 +200,17 @@ export function ModelSelector({
 
   useEffect(() => {
     if (isOpen && inputRef.current) inputRef.current.focus();
+    if (isOpen && !localSearch) {
+      // Scroll to the selected model after the list renders
+      requestAnimationFrame(() => {
+        const list = listRef.current;
+        if (!list) return;
+        const selected = list.querySelector('[data-selected="true"]');
+        if (selected) {
+          selected.scrollIntoView({ block: "center" });
+        }
+      });
+    }
   }, [isOpen]);
 
   const handleKeyDown = useCallback(
@@ -296,7 +308,7 @@ export function ModelSelector({
                   </button>
                 )}
               </div>
-              <div className="max-h-72 overflow-auto p-1.5">
+              <div ref={listRef} className="max-h-72 overflow-auto p-1.5">
                 {filteredModels.length === 0 ? (
                   <div className="py-6 text-center text-sm text-muted-foreground">
                     {t("models.noResults")}
@@ -313,6 +325,7 @@ export function ModelSelector({
                       <button
                         key={model.model_id}
                         type="button"
+                        data-selected={isSelected || undefined}
                         onClick={() => handleSelect(model.model_id)}
                         title={model.model_id}
                         className={cn(

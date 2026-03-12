@@ -257,6 +257,9 @@ export function OutputDisplay({
     }
 
     const saveOutputs = async () => {
+      let savedCount = 0;
+      let failedCount = 0;
+      let lastError: string | null = null;
       for (const { output, index } of unsaved) {
         try {
           const result = await saveAsset(output, detectAssetType(output)!, {
@@ -266,17 +269,30 @@ export function OutputDisplay({
             resultIndex: index,
           });
           if (result) {
+            savedCount++;
             setSavedIndexes((prev) => new Set(prev).add(index));
           }
         } catch (err) {
+          failedCount++;
+          lastError = err instanceof Error ? err.message : String(err);
           console.error("Failed to auto-save asset:", err);
         }
       }
-      toast({
-        title: t("playground.generationComplete", "Generation complete"),
-        description: t("playground.autoSaved"),
-        duration: 2000,
-      });
+      if (savedCount > 0) {
+        toast({
+          title: t("playground.generationComplete", "Generation complete"),
+          description: t("playground.autoSaved"),
+          duration: 2000,
+        });
+      }
+      if (failedCount > 0) {
+        toast({
+          title: t("common.error"),
+          description: lastError,
+          variant: "destructive",
+          duration: 4000,
+        });
+      }
     };
 
     saveOutputs();

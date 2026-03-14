@@ -1,0 +1,120 @@
+/**
+ * Type-safe IPC client for history cache (renderer process).
+ */
+import type {
+  CachedPrediction,
+  HistoryCacheListOptions,
+  HistoryCacheStats,
+} from "@/types/history-cache";
+import type { HistoryItem } from "@/types/prediction";
+
+export type SyncProgress = {
+  stage: "fetching" | "downloading" | "complete";
+  current: number;
+  total: number;
+  percentage: number;
+};
+
+function getApi() {
+  if (typeof window === "undefined") return undefined;
+  return (window as unknown as Record<string, unknown>)
+    .electronAPI as Record<string, unknown> | undefined;
+}
+
+async function invoke<T>(channel: string, args?: unknown): Promise<T> {
+  const api = getApi();
+  if (!api) return Promise.reject(new Error("Electron API not available"));
+
+  // Convert channel name to camelCase: "upsertBulk" -> "UpsertBulk" -> "historyCacheUpsertBulk"
+  const pascalCase = channel
+    .split(/(?=[A-Z])/)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join("");
+  const handlerName = `historyCache${pascalCase}`;
+
+  const handler = (api as Record<string, (args?: unknown) => Promise<unknown>>)[handlerName];
+  if (!handler)
+    return Promise.reject(new Error(`History cache channel not found: ${channel} (tried: ${handlerName})`));
+  return handler(args) as Promise<T>;
+}
+
+export const historyCacheIpc = {
+  list: (options: HistoryCacheListOptions): Promise<CachedPrediction[]> =>
+    invoke("list", options),
+
+  get: (id: string): Promise<CachedPrediction | null> => invoke("get", id),
+
+  upsert: (
+    item: HistoryItem & { inputs?: Record<string, unknown> },
+  ): Promise<{ success: boolean }> => invoke("upsert", item),
+
+  upsertBulk: (
+    items: HistoryItem[],
+  ): Promise<{ success: boolean; count: number }> => invoke("upsertBulk", items),
+
+  delete: (id: string): Promise<{ success: boolean }> => invoke("delete", id),
+
+  stats: (): Promise<HistoryCacheStats> => invoke("stats"),
+
+  clear: (): Promise<{ success: boolean }> => invoke("clear"),
+
+  syncWithImages: async (): Promise<{
+    success: boolean;
+    count: number;
+    errors: string[];
+  }> => {
+    // Fetch history and details in renderer (where API client is available)
+    const { apiClient } = await import("@/api/client");
+
+    // Fetch history items with extended timeout (sync operations can take longer)
+    const historyResponse = await apiClient.getHistory(1, 100, undefined, { timeout: 120000 });
+    const historyItems = historyResponse.items || [];
+
+    // Fetch details for all items
+    const detailItems = await Promise.all(
+      historyItems.map(async (item) => {
+        try {
+          const details = await apiClient.getPredictionDetails(item.id);
+          return { id: item.id, input: details.input };
+        } catch (err) {
+          console.error(`[History IPC] Failed to fetch details for ${item.id}:`, err);
+          return { id: item.id, input: undefined };
+        }
+      }),
+    );
+
+    // Pass data to main process for downloading and caching
+    return invoke("syncWithImages", { historyItems, detailItems });
+  },
+
+  syncFromLocalStorage: async (): Promise<{
+    success: boolean;
+    count: number;
+    errors: string[];
+  }> => {
+    // Read from localStorage
+    const localStorageData = localStorage.getItem("wavespeed_prediction_inputs");
+    if (!localStorageData) {
+      return { success: false, count: 0, errors: ["No localStorage data found"] };
+    }
+
+    return invoke("syncFromLocalStorage", localStorageData);
+  },
+
+  isSyncing: (): Promise<boolean> => invoke("isSyncing"),
+
+  onSyncProgress: (callback: (progress: SyncProgress) => void): (() => void) => {
+    const api = getApi();
+    if (!api) return () => {};
+
+    const onProgress = (api as Record<string, unknown>)
+      .onHistoryCacheSyncProgress as (cb: (progress: SyncProgress) => void) => (() => void);
+
+    if (!onProgress) {
+      console.warn("[History IPC] onHistoryCacheSyncProgress not available");
+      return () => {};
+    }
+
+    return onProgress(callback);
+  },
+};

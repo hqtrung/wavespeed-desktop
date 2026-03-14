@@ -411,6 +411,7 @@ class WaveSpeedClient {
     page: number = 1,
     pageSize: number = 20,
     filters?: HistoryFilters,
+    options?: { timeout?: number },
   ): Promise<HistoryResponse["data"]> {
     try {
       // Default to last 24 hours if no date filters provided
@@ -431,6 +432,7 @@ class WaveSpeedClient {
       const response = await this.client.post<HistoryResponse>(
         "/api/v3/predictions",
         body,
+        options?.timeout ? { timeout: options.timeout } : undefined,
       );
       if (response.data.code !== 200) {
         throw new APIError(response.data.message || "Failed to fetch history", {

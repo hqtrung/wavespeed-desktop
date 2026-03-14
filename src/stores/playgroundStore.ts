@@ -11,6 +11,8 @@ import type { BatchConfig, BatchState, BatchResult } from "@/types/batch";
 import { DEFAULT_BATCH_CONFIG } from "@/types/batch";
 import { persistentStorage } from "@/lib/storage";
 import { isImageUrl, isVideoUrl } from "@/lib/mediaUtils";
+import { historyCacheIpc } from "@/ipc/history";
+import { predictionResultToHistoryItem } from "@/lib/history-utils";
 
 /* ── Playground session persistence ───────────────────────────────────── */
 
@@ -449,22 +451,26 @@ export const usePlaygroundStore = create<PlaygroundState>((set, get) => ({
     }
 
     // Set running state and clear batch results (switching to single mode)
-    set((state) => ({
-      tabs: state.tabs.map((tab) =>
-        tab.id === state.activeTabId
-          ? {
-              ...tab,
-              isRunning: true,
-              error: null,
-              currentPrediction: null,
-              outputs: [],
-              selectedHistoryIndex: null,
-              batchState: null,
-              batchResults: [],
-            }
-          : tab,
-      ),
-    }));
+    set((state) => {
+      const activeTab = state.tabs.find((t) => t.id === state.activeTabId);
+      console.log("[Playground] Starting prediction, formValues:", activeTab?.formValues);
+      return {
+        tabs: state.tabs.map((tab) =>
+          tab.id === state.activeTabId
+            ? {
+                ...tab,
+                isRunning: true,
+                error: null,
+                currentPrediction: null,
+                outputs: [],
+                selectedHistoryIndex: null,
+                batchState: null,
+                batchResults: [],
+              }
+            : tab,
+        ),
+      };
+    });
 
     const tabId = get().activeTabId;
 
@@ -516,6 +522,35 @@ export const usePlaygroundStore = create<PlaygroundState>((set, get) => ({
       // Build history items — split multi-media outputs into individual entries
       const historyItems: GenerationHistoryItem[] = [];
 
+      // Snapshot form values for history recall
+      const snapshotValues = { ...formValues };
+
+      // Debug logging
+      console.log("[Playground] Saving prediction with formValues:", snapshotValues);
+
+      // Cache prediction result immediately (fire-and-forget)
+      const historyItem = predictionResultToHistoryItem(result, snapshotValues);
+      historyCacheIpc.upsert(historyItem).catch((err) => {
+        console.error("[Playground] Failed to cache prediction:", err);
+      });
+
+      // Save inputs to localStorage for history sync
+      // Note: We use the store directly but can't use hooks outside React
+      // So we access it via the store's save function
+      try {
+        // Import the store and call save directly on the instance
+        const { usePredictionInputsStore } = await import("@/stores/predictionInputsStore");
+        const saveFunc = usePredictionInputsStore.getState().save;
+        saveFunc(
+          result.id || `gen-${Date.now()}`,
+          selectedModel.model_id,
+          selectedModel.name || selectedModel.model_id,
+          snapshotValues,
+        );
+      } catch (err) {
+        console.error("[Playground] Failed to save prediction inputs:", err);
+      }
+
       const mediaEntries: { output: string; type: "image" | "video" }[] = [];
       for (const output of outputs) {
         if (typeof output === "string") {
@@ -524,9 +559,6 @@ export const usePlaygroundStore = create<PlaygroundState>((set, get) => ({
             mediaEntries.push({ output, type: "video" });
         }
       }
-
-      // Snapshot form values for history recall
-      const snapshotValues = { ...formValues };
 
       if (mediaEntries.length >= 2) {
         // Split: one history item per media output (newest/first at index 0)
@@ -794,6 +826,12 @@ export const usePlaygroundStore = create<PlaygroundState>((set, get) => ({
           error: null,
           timing,
         };
+
+        // Cache this batch prediction result (fire-and-forget)
+        const batchHistoryItem = predictionResultToHistoryItem(result, input);
+        historyCacheIpc.upsert(batchHistoryItem).catch((err) => {
+          console.error("[Playground] Failed to cache batch prediction:", err);
+        });
 
         // Build history items for this single batch result
         const itemHistoryEntries: GenerationHistoryItem[] = [];

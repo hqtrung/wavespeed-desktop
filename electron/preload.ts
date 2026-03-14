@@ -378,6 +378,62 @@ const electronAPI = {
     ipcRenderer.on("assets:new-asset", handler);
     return () => ipcRenderer.removeListener("assets:new-asset", handler);
   },
+
+  // History cache APIs
+  historyCacheList: (
+    options: { limit?: number; offset?: number; status?: string },
+  ): Promise<unknown[]> =>
+    ipcRenderer.invoke("history-cache:list", options),
+  historyCacheGet: (id: string): Promise<unknown> =>
+    ipcRenderer.invoke("history-cache:get", id),
+  historyCacheUpsert: (
+    item: unknown,
+  ): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke("history-cache:upsert", item),
+  historyCacheUpsertBulk: (
+    items: unknown[],
+  ): Promise<{ success: boolean; count: number }> =>
+    ipcRenderer.invoke("history-cache:upsert-bulk", items),
+  historyCacheDelete: (id: string): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke("history-cache:delete", id),
+  historyCacheStats: (): Promise<{
+    totalCount: number;
+    lastSyncTime: string | null;
+  }> => ipcRenderer.invoke("history-cache:stats"),
+  historyCacheClear: (): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke("history-cache:clear"),
+  historyCacheSyncWithImages: (data: {
+    historyItems: unknown[];
+    detailItems: Array<{ id: string; input?: Record<string, unknown> }>;
+  }): Promise<{
+    success: boolean;
+    count: number;
+    errors: string[];
+  }> => ipcRenderer.invoke("history-cache:sync-with-images", data),
+  historyCacheIsSyncing: (): Promise<boolean> =>
+    ipcRenderer.invoke("history-cache:is-syncing"),
+  historyCacheSyncFromLocalStorage: (localStorageData: string): Promise<{
+    success: boolean;
+    count: number;
+    errors: string[];
+  }> => ipcRenderer.invoke("history-cache:sync-from-local-storage", localStorageData),
+  onHistoryCacheSyncProgress: (
+    callback: (progress: {
+      stage: "fetching" | "downloading" | "complete";
+      current: number;
+      total: number;
+      percentage: number;
+    }) => void,
+  ): (() => void) => {
+    const handler = (_: unknown, progress: unknown) => callback(progress as {
+      stage: "fetching" | "downloading" | "complete";
+      current: number;
+      total: number;
+      percentage: number;
+    });
+    ipcRenderer.on("history-cache:sync-progress", handler);
+    return () => ipcRenderer.removeListener("history-cache:sync-progress", handler);
+  },
 };
 
 // ─── Workflow API (isolated namespace to avoid collision with electronAPI) ────

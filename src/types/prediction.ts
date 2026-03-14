@@ -26,11 +26,13 @@ export interface HistoryItem {
   status: "pending" | "processing" | "completed" | "failed" | "created";
   outputs?: (string | Record<string, unknown>)[];
   created_at: string;
+  updated_at?: string;
   execution_time?: number;
   has_nsfw_contents?: boolean[];
   // API may return inputs alongside history items
   inputs?: Record<string, unknown>;
   input?: Record<string, unknown>;
+  error?: string;
 }
 
 export interface HistoryResponse {

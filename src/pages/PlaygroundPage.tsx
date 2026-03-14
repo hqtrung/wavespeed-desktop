@@ -157,6 +157,10 @@ export function PlaygroundPage() {
   const templateLoadedRef = useRef<string | null>(null);
   const initialTabCreatedRef = useRef(false);
 
+  // Loading state timeout - force render after 3 seconds even if API key loading is stuck
+  const [forceRender, setForceRender] = useState(false);
+  const loadingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
   // Dynamic pricing state
   const [calculatedPrice, setCalculatedPrice] = useState<number | null>(null);
   const [isPricingLoading, setIsPricingLoading] = useState(false);
@@ -751,10 +755,29 @@ export function PlaygroundPage() {
     window.history.replaceState(null, "", newUrl);
   };
 
+  // Set up loading timeout - force render after 3 seconds if loading is stuck
+  useEffect(() => {
+    if (isLoadingApiKey || !hasAttemptedLoad) {
+      loadingTimeoutRef.current = setTimeout(() => {
+        console.warn("[Playground] Loading timeout - forcing render");
+        setForceRender(true);
+      }, 3000);
+    } else {
+      setForceRender(false);
+    }
+
+    return () => {
+      if (loadingTimeoutRef.current) {
+        clearTimeout(loadingTimeoutRef.current);
+      }
+    };
+  }, [isLoadingApiKey, hasAttemptedLoad]);
+
   // Block render only while the API key is being read from disk.
   // Once we have the key (or confirmed there's none), show the UI immediately.
   // Models come from localStorage cache instantly, so no need to wait for network.
-  if (isLoadingApiKey || !hasAttemptedLoad) {
+  // Use forceRender to override loading state if timeout is triggered.
+  if ((isLoadingApiKey || !hasAttemptedLoad) && !forceRender) {
     return (
       <div className="flex h-full items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />

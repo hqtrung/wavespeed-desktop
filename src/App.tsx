@@ -64,7 +64,6 @@ function App() {
           element={<SmartPlaygroundPage />}
         />
         <Route path="models" element={<ModelsPage />} />
-        <Route path="playground" element={<PersistentPagePlaceholder />} />
         <Route path="playground/*" element={<PersistentPagePlaceholder />} />
         <Route path="templates" element={<TemplatesPage />} />
         <Route path="history" element={<PersistentPagePlaceholder />} />

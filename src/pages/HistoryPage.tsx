@@ -1,7 +1,9 @@
-import { useState, useEffect, useRef, useCallback, memo } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { apiClient } from "@/api/client";
+import { historyCacheIpc } from "@/ipc/history";
+import { getHistorySyncService } from "@/lib/history-sync";
 import { useApiKeyStore } from "@/stores/apiKeyStore";
 import { usePlaygroundStore } from "@/stores/playgroundStore";
 import { useModelsStore } from "@/stores/modelsStore";
@@ -70,6 +72,10 @@ import {
   History,
   Sparkles,
   MoreVertical,
+  Play,
+  WifiOff,
+  CloudDownload,
+  Info,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AudioPlayer } from "@/components/shared/AudioPlayer";
@@ -136,6 +142,20 @@ function VideoPreview({ src, enabled }: { src: string; enabled: boolean }) {
 
 function formatDate(dateString: string) {
   return new Date(dateString).toLocaleString();
+}
+
+function formatTimeAgo(dateString: string): string {
+  const now = Date.now();
+  const past = new Date(dateString).getTime();
+  const seconds = Math.floor((now - past) / 1000);
+
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  return `${days}d`;
 }
 
 function getOutputType(
@@ -205,6 +225,45 @@ const HistoryCard = memo(function HistoryCard({
   const hasPreview = item.outputs && item.outputs.length > 0;
   const firstOutput = item.outputs?.[0];
   const shouldLoad = loadPreviews && isInView;
+
+  // Load cached item to get inputs (for prompt display)
+  const [cachedInputs, setCachedInputs] = useState<Record<string, unknown> | null>(null);
+
+  useEffect(() => {
+    if (isInView && !cachedInputs) {
+      console.log("[HistoryCard] Loading cached inputs for:", item.id);
+      historyCacheIpc.get(item.id)
+        .then((cached) => {
+          console.log("[HistoryCard] Got cached item:", cached);
+          if (cached?.inputs) {
+            console.log("[HistoryCard] Setting cached inputs:", cached.inputs);
+            setCachedInputs(cached.inputs);
+          } else {
+            console.log("[HistoryCard] No inputs in cached item");
+          }
+        })
+        .catch((err) => {
+          console.error("[HistoryCard] Failed to load cached item:", err);
+        });
+    }
+  }, [isInView, item.id, cachedInputs]);
+
+  // Extract prompt from inputs
+  const prompt = useMemo(() => {
+    if (!cachedInputs) return null;
+
+    // Common prompt field names
+    const promptFieldNames = ['prompt', 'text', 'input', 'caption', 'description', 'instruction'];
+
+    for (const fieldName of promptFieldNames) {
+      const value = cachedInputs[fieldName];
+      if (typeof value === 'string' && value.trim()) {
+        return value.trim();
+      }
+    }
+
+    return null;
+  }, [cachedInputs]);
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -334,6 +393,14 @@ const HistoryCard = memo(function HistoryCard({
         <div className="flex items-start justify-between gap-1">
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium truncate">{item.model}</p>
+            {prompt && (
+              <p
+                className="mt-1 text-xs text-muted-foreground line-clamp-2"
+                title={prompt}
+              >
+                "{prompt}"
+              </p>
+            )}
             <p className="mt-0.5 text-xs text-muted-foreground truncate">
               {formatDate(item.created_at)}
             </p>
@@ -418,12 +485,91 @@ export function HistoryPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
   const [isOpeningPlayground, setIsOpeningPlayground] = useState(false);
+
+  // Cached inputs for selected item (detail panel)
+  const [selectedItemInputs, setSelectedItemInputs] = useState<Record<string, unknown> | null>(null);
+  const [copiedPrompt, setCopiedPrompt] = useState(false);
+
+  // Extract prompt from cached inputs
+  const detailPrompt = useMemo(() => {
+    if (!selectedItemInputs) return null;
+    const promptFieldNames = ['prompt', 'text', 'input', 'caption', 'description', 'instruction'];
+    for (const fieldName of promptFieldNames) {
+      const value = selectedItemInputs[fieldName];
+      if (typeof value === 'string' && value.trim()) {
+        return value.trim();
+      }
+    }
+    return null;
+  }, [selectedItemInputs]);
+
+  // Extract input images from cached inputs
+  const detailInputImages = useMemo(() => {
+    if (!selectedItemInputs) return [];
+    const imageFieldNames = [
+      'image', 'image_url', 'input_image', 'input_image_url',
+      'source_image', 'source_image_url', 'init_image', 'init_image_url',
+      'control_image', 'control_image_url'
+    ];
+    const images: string[] = [];
+    for (const fieldName of imageFieldNames) {
+      const value = selectedItemInputs[fieldName];
+      if (typeof value === 'string' && value.trim()) {
+        images.push(value.trim());
+      }
+    }
+    // Also check array fields
+    const arrayFieldNames = ['images', 'image_urls', 'input_images', 'input_image_urls'];
+    for (const fieldName of arrayFieldNames) {
+      const value = selectedItemInputs[fieldName];
+      if (Array.isArray(value)) {
+        for (const item of value) {
+          if (typeof item === 'string' && item.trim()) {
+            images.push(item.trim());
+          }
+        }
+      }
+    }
+    return images;
+  }, [selectedItemInputs]);
+
+  // Sync state
+  type SyncStatus = "synced" | "syncing" | "offline" | "error";
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>("syncing");
+  const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
+  const [isOnline, setIsOnline] = useState(true);
+
+  // Offline state
+  type OfflineReason = "no-api-key" | "network-offline" | "api-error" | null;
+  const [offlineReason, setOfflineReason] = useState<OfflineReason>(null);
+
+  // Background sync service state
+  const [syncServiceStatus, setSyncServiceStatus] = useState<
+    "idle" | "syncing" | "success" | "error"
+  >("idle");
+
+  // LocalStorage sync state
+  const [localStorageSyncStatus, setLocalStorageSyncStatus] = useState<
+    "idle" | "syncing" | "success" | "error"
+  >("idle");
+
   const pageSize = 50;
+
+  // Determine offline state
+  const isOffline = offlineReason !== null || !isValidated || !isOnline;
 
   const handleCopyId = async (id: string) => {
     await navigator.clipboard.writeText(id);
     setCopiedId(true);
     setTimeout(() => setCopiedId(false), 2000);
+  };
+
+  const handleCopyPrompt = async () => {
+    if (detailPrompt) {
+      await navigator.clipboard.writeText(detailPrompt);
+      setCopiedPrompt(true);
+      setTimeout(() => setCopiedPrompt(false), 2000);
+    }
   };
 
   const handleOpenInPlayground = useCallback(
@@ -453,7 +599,20 @@ export function HistoryPage() {
           : undefined,
       };
 
-      // Try local storage first (saved from previous Playground runs)
+      // Priority 1: Check cache (includes inputs)
+      try {
+        const cached = await historyCacheIpc.get(item.id);
+        if (cached?.inputs && Object.keys(cached.inputs).length > 0) {
+          createTab(model, cached.inputs, item.outputs, predictionResult);
+          setSelectedItem(null);
+          navigate(`/playground/${encodeURIComponent(item.model)}`);
+          return;
+        }
+      } catch {
+        // Cache miss, continue to fallbacks
+      }
+
+      // Priority 2: Check predictionInputsStore (existing)
       const localEntry = getLocalInputs(item.id);
       if (localEntry?.inputs && Object.keys(localEntry.inputs).length > 0) {
         createTab(model, localEntry.inputs, item.outputs, predictionResult);
@@ -462,7 +621,7 @@ export function HistoryPage() {
         return;
       }
 
-      // Check Playground tabs' generationHistory (Recent Generations store formValues)
+      // Priority 3: Check Playground tabs' generationHistory
       const historyFormValues = findFormValuesByPredictionId(item.id);
       if (historyFormValues) {
         createTab(model, historyFormValues, item.outputs, predictionResult);
@@ -471,7 +630,7 @@ export function HistoryPage() {
         return;
       }
 
-      // Check if the history item itself carries inputs from the API list response
+      // Priority 4: Check if the history item itself carries inputs from the API list response
       const itemInputs = item.inputs || item.input;
       if (
         itemInputs &&
@@ -489,28 +648,35 @@ export function HistoryPage() {
         return;
       }
 
-      // Fallback: fetch prediction details from API
-      setIsOpeningPlayground(true);
-      try {
-        const details = await apiClient.getPredictionDetails(item.id);
-        const apiInput =
-          (details as any).input || (details as any).inputs || {};
-        createTab(
-          model,
-          Object.keys(apiInput).length > 0
-            ? normalizeApiInputsToFormValues(apiInput)
-            : undefined,
-          item.outputs,
-          predictionResult,
-        );
-        setSelectedItem(null);
-        navigate(`/playground/${encodeURIComponent(item.model)}`);
-      } catch {
+      // Priority 5: Fetch prediction details from API
+      if (syncStatus !== "offline") {
+        setIsOpeningPlayground(true);
+        try {
+          const details = await apiClient.getPredictionDetails(item.id);
+          const apiInput =
+            (details as any).input || (details as any).inputs || {};
+          createTab(
+            model,
+            Object.keys(apiInput).length > 0
+              ? normalizeApiInputsToFormValues(apiInput)
+              : undefined,
+            item.outputs,
+            predictionResult,
+          );
+          setSelectedItem(null);
+          navigate(`/playground/${encodeURIComponent(item.model)}`);
+        } catch {
+          createTab(model, undefined, item.outputs, predictionResult);
+          setSelectedItem(null);
+          navigate(`/playground/${encodeURIComponent(item.model)}`);
+        } finally {
+          setIsOpeningPlayground(false);
+        }
+      } else {
+        // Priority 6: Open empty tab with model (offline)
         createTab(model, undefined, item.outputs, predictionResult);
         setSelectedItem(null);
         navigate(`/playground/${encodeURIComponent(item.model)}`);
-      } finally {
-        setIsOpeningPlayground(false);
       }
     },
     [
@@ -520,6 +686,42 @@ export function HistoryPage() {
       createTab,
       navigate,
       t,
+      syncStatus,
+    ],
+  );
+          const details = await apiClient.getPredictionDetails(item.id);
+          const apiInput =
+            (details as any).input || (details as any).inputs || {};
+          createTab(
+            model,
+            Object.keys(apiInput).length > 0 ? apiInput : undefined,
+          );
+          setSelectedItem(null);
+          navigate(`/playground/${encodeURIComponent(item.model)}`);
+          return;
+        } catch {
+          // API failed, fall through to empty tab
+          createTab(model, undefined, item.outputs, predictionResult);
+          setSelectedItem(null);
+          navigate(`/playground/${encodeURIComponent(item.model)}`);
+        } finally {
+          setIsOpeningPlayground(false);
+        }
+      } else {
+        // Offline: Open empty tab with model
+        createTab(model, undefined, item.outputs, predictionResult);
+        setSelectedItem(null);
+        navigate(`/playground/${encodeURIComponent(item.model)}`);
+      }
+    },
+    [
+      getModelById,
+      getLocalInputs,
+      findFormValuesByPredictionId,
+      createTab,
+      navigate,
+      t,
+      syncStatus,
     ],
   );
 
@@ -560,11 +762,29 @@ export function HistoryPage() {
   }, [isActive, selectedItem, navigateHistory]);
 
   const fetchHistory = useCallback(async () => {
-    if (!isValidated) return;
+    // 1. Try cache first for instant display
+    try {
+      const cached = await historyCacheIpc.list({
+        limit: pageSize,
+        offset: (page - 1) * pageSize,
+        status: statusFilter !== "all" ? statusFilter : undefined,
+      });
+      if (cached.length > 0) {
+        setItems(cached);
+        setSyncStatus("syncing"); // Will try API next
+      }
+    } catch (err) {
+      console.error("[History] Cache fetch failed:", err);
+    }
 
-    setIsLoading(true);
-    setError(null);
+    // 2. If offline or no API key, stop here
+    if (!isValidated || !isOnline) {
+      setSyncStatus("offline");
+      setIsLoading(false);
+      return;
+    }
 
+    // 3. Sync with API
     try {
       const filters =
         statusFilter !== "all"
@@ -578,20 +798,39 @@ export function HistoryPage() {
           : undefined;
 
       const response = await apiClient.getHistory(page, pageSize, filters);
-      setItems(response.items || []);
+      const apiItems = response.items || [];
+
+      // 4. Upsert to cache (server wins)
+      await historyCacheIpc.upsertBulk(apiItems);
+
+      // 5. Update UI with fresh data
+      setItems(apiItems);
+      setSyncStatus("synced");
+      setLastSyncTime(new Date().toISOString());
+      setError(null);
     } catch (err) {
-      console.error("History fetch error:", err);
-      setError(err instanceof Error ? err.message : "Failed to fetch history");
+      console.error("[History] API fetch error:", err);
+
+      // If we have cached items, show them with offline badge
+      if (items.length > 0) {
+        setSyncStatus("offline");
+        setOfflineReason("api-error");
+      } else {
+        setError(err instanceof Error ? err.message : "Failed to fetch history");
+        setSyncStatus("error");
+      }
     } finally {
       setIsLoading(false);
     }
-  }, [isValidated, page, pageSize, statusFilter]);
+  }, [isValidated, page, pageSize, statusFilter, isOnline, items.length]);
 
   const handleDelete = useCallback(
     async (item: HistoryItem) => {
       setIsDeleting(true);
       try {
         await apiClient.deletePrediction(item.id);
+        // Remove from cache too
+        await historyCacheIpc.delete(item.id);
         setItems((prevItems) =>
           prevItems.filter((existing) => existing.id !== item.id),
         );
@@ -623,6 +862,8 @@ export function HistoryPage() {
     const idsSet = new Set(idsToDelete);
     try {
       await apiClient.deletePredictions(idsToDelete);
+      // Delete from cache
+      await Promise.all(idsToDelete.map((id) => historyCacheIpc.delete(id)));
       setItems((prevItems) =>
         prevItems.filter((existing) => !idsSet.has(existing.id)),
       );
@@ -649,6 +890,36 @@ export function HistoryPage() {
       setShowBulkDeleteConfirm(false);
     }
   }, [selectedIds, selectedItem, t]);
+
+  const handleSyncFromLocalStorage = useCallback(async () => {
+    setLocalStorageSyncStatus("syncing");
+    try {
+      const result = await historyCacheIpc.syncFromLocalStorage();
+      if (result.success) {
+        setLocalStorageSyncStatus("success");
+        toast({
+          title: t("history.syncFromLocalStorageSuccess", { count: result.count }),
+          variant: "default",
+        });
+        // Refresh the history list
+        await fetchHistory();
+      } else {
+        setLocalStorageSyncStatus("error");
+        toast({
+          title: t("history.syncFromLocalStorageError"),
+          description: result.errors.join(", "),
+          variant: "destructive",
+        });
+      }
+    } catch (err) {
+      setLocalStorageSyncStatus("error");
+      toast({
+        title: t("history.syncFromLocalStorageError"),
+        description: err instanceof Error ? err.message : t("common.error"),
+        variant: "destructive",
+      });
+    }
+  }, [t, fetchHistory]);
 
   const handleToggleSelect = useCallback((id: string) => {
     setSelectedIds((prev) => {
@@ -699,6 +970,30 @@ export function HistoryPage() {
     setSelectedIds(new Set());
   }, [page, statusFilter]);
 
+  // Load cached inputs when selected item changes
+  useEffect(() => {
+    if (!deferredSelectedItem) {
+      setSelectedItemInputs(null);
+      return;
+    }
+
+    console.log("[HistoryPage] Loading inputs for selected item:", deferredSelectedItem.id);
+    historyCacheIpc.get(deferredSelectedItem.id)
+      .then((cached) => {
+        console.log("[HistoryPage] Got cached item for detail panel:", cached);
+        if (cached?.inputs) {
+          console.log("[HistoryPage] Setting detail panel inputs:", cached.inputs);
+          setSelectedItemInputs(cached.inputs);
+        } else {
+          console.log("[HistoryPage] No inputs in cached item");
+          setSelectedItemInputs(null);
+        }
+      })
+      .catch((err) => {
+        console.error("[HistoryPage] Failed to load inputs:", err);
+      });
+  }, [deferredSelectedItem]);
+
   const maxSelectablePages = 100;
 
   useEffect(() => {
@@ -706,6 +1001,94 @@ export function HistoryPage() {
       setPage(maxSelectablePages);
     }
   }, [page, maxSelectablePages]);
+
+  // Network detection
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      setOfflineReason(null);
+      // Trigger sync if we have cached data
+      if (items.length > 0) {
+        fetchHistory();
+      }
+    };
+
+    const handleOffline = () => {
+      setIsOnline(false);
+      setOfflineReason("network-offline");
+    };
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+
+    // Initial state
+    setIsOnline(navigator.onLine);
+
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, [items.length, fetchHistory]);
+
+  // Check API key status
+  useEffect(() => {
+    if (!isValidated) {
+      setOfflineReason("no-api-key");
+    } else if (offlineReason === "no-api-key") {
+      setOfflineReason(null);
+    }
+  }, [isValidated, offlineReason]);
+
+  // Load initial sync stats
+  useEffect(() => {
+    const loadStats = async () => {
+      try {
+        const stats = await historyCacheIpc.stats();
+        if (stats.lastSyncTime) {
+          setLastSyncTime(stats.lastSyncTime);
+          if (stats.totalCount > 0) {
+            setSyncStatus("synced");
+          }
+        }
+      } catch {
+        // Ignore stats errors
+      }
+    };
+    loadStats();
+  }, []);
+
+  // Initialize background sync service
+  useEffect(() => {
+    const syncService = getHistorySyncService();
+
+    // Subscribe to status changes
+    const unsubscribe = syncService.onStatusChange((status, error) => {
+      setSyncServiceStatus(status);
+      if (status === "error") {
+        console.error("[History Sync] Error:", error);
+      }
+    });
+
+    // Start sync service when on history page
+    syncService.start();
+
+    // Handle visibility change
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        syncService.pause();
+      } else {
+        syncService.resume();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      unsubscribe();
+      syncService.stop();
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, []);
 
   // Status badge helper for the detail dialog
   const getStatusBadge = (status: string) => {
@@ -820,14 +1203,104 @@ export function HistoryPage() {
           <Button
             variant="outline"
             size="sm"
-            onClick={fetchHistory}
-            disabled={isLoading}
+            onClick={() => {
+              setSyncStatus("syncing");
+              fetchHistory();
+            }}
+            disabled={isLoading || isOffline}
+            title={isOffline ? t("history.offlineRefreshDisabled") : undefined}
           >
             <RefreshCw
               className={cn("mr-2 h-4 w-4", isLoading && "animate-spin")}
             />
             {t("common.refresh")}
           </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              const syncService = getHistorySyncService();
+              syncService.syncOnce();
+            }}
+            disabled={syncServiceStatus === "syncing" || isOffline}
+            title={isOffline ? t("history.offlineRefreshDisabled") : undefined}
+          >
+            {syncServiceStatus === "syncing" ? (
+              <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <CloudDownload className="mr-2 h-4 w-4" />
+            )}
+            {t("history.syncNow")}
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleSyncFromLocalStorage}
+            disabled={localStorageSyncStatus === "syncing"}
+          >
+            {localStorageSyncStatus === "syncing" ? (
+              <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <History className="mr-2 h-4 w-4" />
+            )}
+            {t("history.syncFromLocalStorage")}
+          </Button>
+
+          {/* Sync Status Badge */}
+          {(() => {
+            // Combine cache sync status + background sync status
+            const displaySyncStatus =
+              syncServiceStatus === "syncing"
+                ? "syncing"
+                : syncServiceStatus === "error"
+                  ? "error"
+                  : syncStatus; // Fall back to cache status
+
+            if (displaySyncStatus === "synced") {
+              return (
+                <Badge variant="outline" className="h-9 gap-1 text-xs">
+                  <Check className="h-3 w-3" />
+                  {t("history.synced")}
+                </Badge>
+              );
+            }
+            if (displaySyncStatus === "syncing") {
+              return (
+                <Badge variant="outline" className="h-9 gap-1 text-xs">
+                  <RefreshCw className="h-3 w-3 animate-spin" />
+                  {t("history.syncing")}
+                </Badge>
+              );
+            }
+            if (displaySyncStatus === "offline") {
+              return (
+                <Badge variant="secondary" className="h-9 gap-1.5 text-xs">
+                  <WifiOff className="h-3 w-3" />
+                  {offlineReason === "no-api-key" && t("history.offlineNoApiKey")}
+                  {offlineReason === "network-offline" &&
+                    t("history.offlineNetwork")}
+                  {offlineReason === "api-error" && t("history.offlineApiError")}
+                  {!offlineReason &&
+                    lastSyncTime &&
+                    t("history.lastSyncedAt", {
+                      time: formatTimeAgo(lastSyncTime),
+                    })}
+                  {!offlineReason && !lastSyncTime && t("history.offline")}
+                </Badge>
+              );
+            }
+            if (displaySyncStatus === "error") {
+              return (
+                <Badge variant="destructive" className="h-9 gap-1 text-xs">
+                  <AlertCircle className="h-3 w-3" />
+                  {t("history.syncError")}
+                </Badge>
+              );
+            }
+            return null;
+          })()}
           {isSelectionMode && items.length > 0 && (
             <>
               <Button
@@ -889,15 +1362,61 @@ export function HistoryPage() {
               )}
             </div>
           ) : items.length === 0 ? (
-            <div className="text-center py-16 animate-in fade-in duration-500">
-              <Clock className="mx-auto h-12 w-12 text-muted-foreground/40 mb-4 animate-pulse" />
-              <p className="text-muted-foreground text-sm">
-                {t("history.noHistory")}
-              </p>
-            </div>
+            <>
+              {isOffline ? (
+                <div className="text-center py-16 animate-in fade-in duration-500">
+                  <WifiOff className="mx-auto h-12 w-12 text-muted-foreground/40 mb-4" />
+                  <p className="text-muted-foreground text-sm">
+                    {offlineReason === "no-api-key"
+                      ? t("history.offlineNoApiKeyEmpty")
+                      : t("history.offlineEmpty")}
+                  </p>
+                  {offlineReason === "no-api-key" && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-4"
+                      onClick={() => navigate("/settings")}
+                    >
+                      {t("history.configureApiKey")}
+                    </Button>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center py-16 animate-in fade-in duration-500">
+                  <Clock className="mx-auto h-12 w-12 text-muted-foreground/40 mb-4 animate-pulse" />
+                  <p className="text-muted-foreground text-sm">
+                    {t("history.noHistory")}
+                  </p>
+                </div>
+              )}
+            </>
           ) : (
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-              {items.map((item, index) => (
+            <>
+              {/* Offline info banner */}
+              {isOffline && items.length > 0 && (
+                <div className="mx-4 mt-4 p-3 bg-muted/50 rounded-lg border border-border/50 flex items-start gap-3">
+                  <Info className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
+                  <div className="flex-1 text-sm">
+                    <p className="font-medium">
+                      {t("history.offlineBannerTitle")}
+                    </p>
+                    <p className="text-muted-foreground mt-1">
+                      {t("history.offlineBannerDesc")}
+                    </p>
+                    {lastSyncTime && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {t("history.lastSyncedAt", {
+                          time: formatTimeAgo(lastSyncTime),
+                        })}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                {items.map((item, index) => (
                 <HistoryCard
                   key={item.id}
                   item={item}
@@ -912,6 +1431,7 @@ export function HistoryPage() {
                 />
               ))}
             </div>
+          </>
           )}
         </div>
       </ScrollArea>
@@ -998,7 +1518,7 @@ export function HistoryPage() {
                 </span>
               )}
             </DialogTitle>
-            <DialogDescription className="sr-only">
+            <DialogDescription>
               {deferredSelectedItem?.model ?? ""}
             </DialogDescription>
           </DialogHeader>
@@ -1104,6 +1624,59 @@ export function HistoryPage() {
                     <p className="font-medium">
                       {(deferredSelectedItem.execution_time / 1000).toFixed(2)}s
                     </p>
+                  </div>
+                )}
+                {detailPrompt && (
+                  <div className="col-span-2">
+                    <p className="text-muted-foreground">
+                      {t("history.prompt", "Prompt")}
+                    </p>
+                    <div className="flex items-start gap-2">
+                      <p className="font-medium text-sm flex-1 whitespace-pre-wrap break-words">
+                        {detailPrompt}
+                      </p>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={handleCopyPrompt}
+                        className="shrink-0"
+                      >
+                        {copiedPrompt ? (
+                          <Check className="h-4 w-4 text-green-500" />
+                        ) : (
+                          <Copy className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                {detailInputImages.length > 0 && (
+                  <div className="col-span-2">
+                    <p className="text-muted-foreground">
+                      {t("history.inputImages", "Input Images")}
+                    </p>
+                    <div className="flex flex-wrap gap-2 mt-1">
+                      {detailInputImages.map((imageUrl, index) => (
+                        <div
+                          key={index}
+                          className="relative group w-16 h-16 rounded border border-border overflow-hidden"
+                        >
+                          <img
+                            src={imageUrl}
+                            alt={`${t("history.inputImage", "Input Image")} ${index + 1}`}
+                            className="w-full h-full object-cover cursor-pointer"
+                            onClick={() => {
+                              const windowRef = window.open();
+                              if (windowRef) {
+                                windowRef.document.write(
+                                  `<img src="${imageUrl}" style="max-width: 100%; height: auto;" />`
+                                );
+                              }
+                            }}
+                          />
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
                 <div className="col-span-2">

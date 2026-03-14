@@ -17,6 +17,27 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+
+// Extract prompt from formValues for display
+function getPromptFromFormValues(formValues?: Record<string, unknown>): string | null {
+  if (!formValues) return null;
+
+  const promptFieldNames = ['prompt', 'text', 'input', 'caption', 'description', 'instruction'];
+
+  for (const fieldName of promptFieldNames) {
+    const value = formValues[fieldName];
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+  }
+
+  return null;
+}
 
 interface HistoryDrawerProps {
   history: GenerationHistoryItem[];
@@ -208,27 +229,38 @@ export function HistoryDrawer({
             ref={scrollRef}
             className="flex gap-2 px-4 pb-1 mb-2 overflow-x-auto"
           >
-            {history.map((item, index) => (
-              <div key={item.id} className="relative shrink-0 group">
-                <button
-                  onClick={() =>
-                    onSelect(selectedIndex === index ? null : index)
-                  }
-                  className={cn(
-                    "relative w-[72px] h-[72px] rounded-lg overflow-hidden bg-muted border-2 transition-all hover:scale-105",
-                    selectedIndex === index
-                      ? "border-primary shadow-md shadow-primary/20"
-                      : index === 0 && selectedIndex === null
-                        ? "border-primary/40"
-                        : "border-transparent hover:border-muted-foreground/30",
-                  )}
-                >
-                  <ThumbnailContent item={item} />
-                  <span className="absolute bottom-0 right-0 bg-black/60 text-white text-[9px] px-1 rounded-tl font-medium">
-                    {index + 1}
-                  </span>
-                </button>
-                {onDuplicateToNewTab && (
+            {history.map((item, index) => {
+              const prompt = getPromptFromFormValues(item.formValues);
+              return (
+                <div key={item.id} className="relative shrink-0 group">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        onClick={() =>
+                          onSelect(selectedIndex === index ? null : index)
+                        }
+                        className={cn(
+                          "relative w-[72px] h-[72px] rounded-lg overflow-hidden bg-muted border-2 transition-all hover:scale-105",
+                          selectedIndex === index
+                            ? "border-primary shadow-md shadow-primary/20"
+                            : index === 0 && selectedIndex === null
+                              ? "border-primary/40"
+                              : "border-transparent hover:border-muted-foreground/30",
+                        )}
+                      >
+                        <ThumbnailContent item={item} />
+                        <span className="absolute bottom-0 right-0 bg-black/60 text-white text-[9px] px-1 rounded-tl font-medium">
+                          {index + 1}
+                        </span>
+                      </button>
+                    </TooltipTrigger>
+                    {prompt && (
+                      <TooltipContent side="top" className="max-w-[300px]">
+                        <p className="text-xs line-clamp-3">{prompt}</p>
+                      </TooltipContent>
+                    )}
+                  </Tooltip>
+                  {onDuplicateToNewTab && (
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <button
@@ -263,9 +295,10 @@ export function HistoryDrawer({
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
-                )}
-              </div>
-            ))}
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>

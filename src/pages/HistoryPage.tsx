@@ -689,41 +689,6 @@ export function HistoryPage() {
       syncStatus,
     ],
   );
-          const details = await apiClient.getPredictionDetails(item.id);
-          const apiInput =
-            (details as any).input || (details as any).inputs || {};
-          createTab(
-            model,
-            Object.keys(apiInput).length > 0 ? apiInput : undefined,
-          );
-          setSelectedItem(null);
-          navigate(`/playground/${encodeURIComponent(item.model)}`);
-          return;
-        } catch {
-          // API failed, fall through to empty tab
-          createTab(model, undefined, item.outputs, predictionResult);
-          setSelectedItem(null);
-          navigate(`/playground/${encodeURIComponent(item.model)}`);
-        } finally {
-          setIsOpeningPlayground(false);
-        }
-      } else {
-        // Offline: Open empty tab with model
-        createTab(model, undefined, item.outputs, predictionResult);
-        setSelectedItem(null);
-        navigate(`/playground/${encodeURIComponent(item.model)}`);
-      }
-    },
-    [
-      getModelById,
-      getLocalInputs,
-      findFormValuesByPredictionId,
-      createTab,
-      navigate,
-      t,
-      syncStatus,
-    ],
-  );
 
   // Navigate to previous/next history item (with loop support)
   const navigateHistory = useCallback(

@@ -27,6 +27,7 @@ export interface AssetMetadata {
   workflowName?: string;
   nodeId?: string;
   executionId?: string;
+  folderId?: string; // Optional folder assignment
 }
 
 export interface AssetsFilter {
@@ -39,6 +40,7 @@ export interface AssetsFilter {
   search?: string;
   sortBy?: AssetSortBy;
   sources?: AssetSource[];
+  folderId?: string | null; // Filter by folder (null = all assets)
 }
 
 export interface AssetsSaveOptions {
@@ -75,4 +77,34 @@ export interface SelectDirectoryResult {
   path?: string;
   canceled?: boolean;
   error?: string;
+}
+
+// Folder/collection for organizing assets
+export interface AssetFolder {
+  id: string;
+  name: string;
+  color: string; // Hex color or preset name
+  icon?: string; // Lucide icon name (optional)
+  createdAt: string;
+  assetCount?: number; // Computed, not persisted
+}
+
+// Tag color presets for categorization
+export type TagColor =
+  | "default"
+  | "red"
+  | "orange"
+  | "yellow"
+  | "green"
+  | "blue"
+  | "purple"
+  | "pink";
+
+// Tag category for grouping and coloring tags
+export interface TagCategory {
+  id: string;
+  name: string;
+  color: TagColor;
+  tags: string[]; // Tags in this category
+  createdAt: string;
 }

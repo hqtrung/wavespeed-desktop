@@ -169,6 +169,42 @@ const electronAPI = {
       createdAt: string;
     }>
   > => ipcRenderer.invoke("scan-assets-directory"),
+  getAssetsFolders: (): Promise<
+    Array<{
+      id: string;
+      name: string;
+      color: string;
+      icon?: string;
+      createdAt: string;
+    }>
+  > => ipcRenderer.invoke("get-assets-folders"),
+  saveAssetsFolders: (
+    folders: Array<{
+      id: string;
+      name: string;
+      color: string;
+      icon?: string;
+      createdAt: string;
+    }>,
+  ): Promise<boolean> => ipcRenderer.invoke("save-assets-folders", folders),
+  getAssetsTagCategories: (): Promise<
+    Array<{
+      id: string;
+      name: string;
+      color: "default" | "red" | "orange" | "yellow" | "green" | "blue" | "purple" | "pink";
+      tags: string[];
+      createdAt: string;
+    }>
+  > => ipcRenderer.invoke("get-assets-tag-categories"),
+  saveAssetsTagCategories: (
+    categories: Array<{
+      id: string;
+      name: string;
+      color: "default" | "red" | "orange" | "yellow" | "green" | "blue" | "purple" | "pink";
+      tags: string[];
+      createdAt: string;
+    }>,
+  ): Promise<boolean> => ipcRenderer.invoke("save-assets-tag-categories", categories),
 
   // Stable Diffusion APIs
   sdGetBinaryPath: (): Promise<{

@@ -85,7 +85,13 @@ import type {
   AssetType,
   AssetSortBy,
   AssetsFilter,
+  AssetFolder,
 } from "@/types/asset";
+import {
+  FolderSidebar,
+  FolderCreateDialog,
+} from "@/components/assets/folder-sidebar";
+import { AssetPagination, usePaginationKeyboard } from "@/components/assets/pagination";
 
 // Video preview component - shows first frame, plays on hover
 function VideoPreview({ src, enabled }: { src: string; enabled: boolean }) {
@@ -425,7 +431,7 @@ export function AssetsPage() {
   const navigate = useNavigate();
   const isActive = usePageActive("/assets");
   const { createTab, findFormValuesByPredictionId } = usePlaygroundStore();
-  const { getModelById } = useModelsStore();
+  const { fetchModels, getModelById } = useModelsStore();
   const {
     get: getLocalInputs,
     load: loadPredictionInputs,
@@ -442,6 +448,12 @@ export function AssetsPage() {
     getFilteredAssets,
     getAllTags,
     getAllModels,
+    folders,
+    loadFolders,
+    createFolder,
+    updateFolder,
+    deleteFolder,
+    moveAssetsToFolder,
     openAssetLocation,
   } = useAssetsStore();
   const [isOpeningPlayground, setIsOpeningPlayground] = useState(false);
@@ -471,10 +483,18 @@ export function AssetsPage() {
 
   // Pagination state
   const [page, setPage] = useState(1);
-  const pageSize = 50;
+  const [pageSize, setPageSize] = useState(50);
 
   // Preview toggle
   const [loadPreviews, setLoadPreviews] = useState(true);
+
+  // Folder state
+  const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
+  const [showFolderDialog, setShowFolderDialog] = useState(false);
+  const [folderDialogMode, setFolderDialogMode] = useState<"create" | "edit">(
+    "create",
+  );
+  const [editingFolder, setEditingFolder] = useState<AssetFolder | null>(null);
 
   const markPreviewLoaded = useCallback((_key: string) => {
     // Placeholder — cards track their own visibility via useInView
@@ -483,7 +503,13 @@ export function AssetsPage() {
   // Load assets on mount
   useEffect(() => {
     loadAssets();
-  }, [loadAssets]);
+    loadFolders();
+  }, [loadAssets, loadFolders]);
+
+  // Sync folderId with filter
+  useEffect(() => {
+    setFilter((f) => ({ ...f, folderId: activeFolderId }));
+  }, [activeFolderId]);
 
   // Debounce search
   useEffect(() => {
@@ -493,10 +519,10 @@ export function AssetsPage() {
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  // Reset page when filter changes
+  // Reset page when filter or page size changes
   useEffect(() => {
     setPage(1);
-  }, [filter]);
+  }, [filter, pageSize]);
 
   // Get filtered assets
   const filteredAssets = useMemo(() => {
@@ -509,6 +535,14 @@ export function AssetsPage() {
     const start = (page - 1) * pageSize;
     return filteredAssets.slice(start, start + pageSize);
   }, [filteredAssets, page, pageSize]);
+
+  // Keyboard navigation for pagination (moved after totalPages is defined)
+  usePaginationKeyboard({
+    currentPage: page,
+    totalPages,
+    onPageChange: setPage,
+    enabled: isActive,
+  });
 
   // Get all tags and models for filters
   const allTags = useMemo(() => getAllTags(), [getAllTags, assets]);
@@ -642,15 +676,26 @@ export function AssetsPage() {
     if (!inputsLoaded) loadPredictionInputs();
   }, [inputsLoaded, loadPredictionInputs]);
 
+  // Fetch models to ensure customize button works
+  useEffect(() => {
+    fetchModels();
+  }, [fetchModels]);
+
   const handleCustomize = useCallback(
     async (asset: AssetMetadata) => {
       const model = getModelById(asset.modelId);
       if (!model) {
+        console.error("[AssetsPage] Model not found for asset:", {
+          assetId: asset.id,
+          modelId: asset.modelId,
+          fileName: asset.fileName,
+          allModelIds: useModelsStore.getState().models.map((m) => m.model_id).slice(0, 10),
+        });
         toast({
           title: t("common.error"),
           description: t(
             "history.modelNotAvailable",
-            "Model is no longer available",
+            `Model not found: ${asset.modelId}`,
           ),
           variant: "destructive",
         });
@@ -788,6 +833,85 @@ export function AssetsPage() {
     }
   }, []);
 
+  // Folder handlers
+  const handleGetFolderAssetCount = useCallback(
+    (folderId: string | null) => {
+      if (folderId === null) {
+        return assets.length;
+      }
+      return assets.filter((a) => a.folderId === folderId).length;
+    },
+    [assets],
+  );
+
+  const handleFolderCreate = useCallback(async () => {
+    setFolderDialogMode("create");
+    setEditingFolder(null);
+    setShowFolderDialog(true);
+  }, []);
+
+  const handleFolderEdit = useCallback(
+    async (folder: AssetFolder) => {
+      setFolderDialogMode("edit");
+      setEditingFolder(folder);
+      setShowFolderDialog(true);
+    },
+    [],
+  );
+
+  const handleFolderSubmit = useCallback(
+    async (data: { name: string; color: string }) => {
+      if (folderDialogMode === "create") {
+        await createFolder(data.name, data.color);
+        toast({
+          title: t("assets.folders.folderCreated", "Folder created"),
+          description: t("assets.folders.folderCreatedDesc", '"{{name}}" has been created', {
+            name: data.name,
+          }),
+        });
+      } else if (editingFolder) {
+        await updateFolder(editingFolder.id, data);
+        toast({
+          title: t("assets.folders.folderUpdated", "Folder updated"),
+          description: t("assets.folders.folderUpdatedDesc", '"{{name}}" has been updated', {
+            name: data.name,
+          }),
+        });
+      }
+    },
+    [folderDialogMode, editingFolder, createFolder, updateFolder, t],
+  );
+
+  const handleFolderDelete = useCallback(
+    async (folder: AssetFolder) => {
+      await deleteFolder(folder.id, null);
+      // If we're viewing the deleted folder, switch to All Assets
+      if (activeFolderId === folder.id) {
+        setActiveFolderId(null);
+      }
+      toast({
+        title: t("assets.folders.folderDeleted", "Folder deleted"),
+        description: t("assets.folders.folderDeletedDesc", '"{{name}}" has been deleted', {
+          name: folder.name,
+        }),
+      });
+    },
+    [activeFolderId, deleteFolder, t],
+  );
+
+  const handleAssetsMove = useCallback(
+    async (assetIds: string[], folderId: string | null) => {
+      await moveAssetsToFolder(assetIds, folderId);
+      toast({
+        title: t("assets.folders.assetsMoved", "Assets moved"),
+        description: t("assets.folders.assetsMovedDesc", "{{count}} asset(s) moved to folder", {
+          count: assetIds.length,
+        }),
+      });
+    },
+    [moveAssetsToFolder, t],
+  );
+
   // Navigate to previous/next asset in preview (with loop support)
   const navigateAsset = useCallback(
     (direction: "prev" | "next") => {
@@ -832,7 +956,25 @@ export function AssetsPage() {
   }
 
   return (
-    <div className="flex h-full flex-col pt-12 md:pt-0">
+    <div className="flex h-full pt-12 md:pt-0">
+      {/* Folder Sidebar */}
+      <FolderSidebar
+        folders={folders}
+        activeFolderId={activeFolderId}
+        onFolderSelect={setActiveFolderId}
+        onFolderCreate={handleFolderCreate}
+        onFolderUpdate={(f, updates) => {
+          if (updates.name || updates.color) {
+            handleFolderEdit(f);
+          }
+        }}
+        onFolderDelete={handleFolderDelete}
+        onAssetsMove={handleAssetsMove}
+        getAssetCount={handleGetFolderAssetCount}
+      />
+
+      {/* Main content */}
+      <div className="flex-1 flex flex-col min-w-0">
       {/* Header */}
       <div className="page-header px-4 md:px-6 py-4 border-b border-border/70 animate-in fade-in slide-in-from-bottom-2 duration-300 fill-mode-both">
         <div className="flex flex-col gap-1.5 md:flex-row md:items-baseline md:gap-3 mb-4">
@@ -1122,12 +1264,11 @@ export function AssetsPage() {
         ) : (
           <div className="grid grid-cols-2 gap-4 p-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
             {paginatedAssets.map((asset, index) => {
-              const assetKey = asset.filePath || asset.originalUrl || asset.id;
               return (
                 <AssetCard
-                  key={assetKey}
+                  key={asset.id}
                   asset={asset}
-                  assetKey={assetKey}
+                  assetKey={asset.filePath || asset.originalUrl || asset.id}
                   index={index}
                   loadPreviews={loadPreviews}
                   isSelectionMode={isSelectionMode}
@@ -1149,34 +1290,18 @@ export function AssetsPage() {
       </ScrollArea>
 
       {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between border-t border-border/70 bg-background/70 p-4 backdrop-blur">
-          <p className="text-sm text-muted-foreground">
-            {(page - 1) * pageSize + 1} -{" "}
-            {Math.min(page * pageSize, filteredAssets.length)} /{" "}
-            {filteredAssets.length}
-          </p>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPage((p) => p - 1)}
-              disabled={page === 1}
-            >
-              <ChevronLeft className="h-4 w-4" />
-              {t("common.previous")}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPage((p) => p + 1)}
-              disabled={page >= totalPages}
-            >
-              {t("common.next")}
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
+      {totalPages > 0 && (
+        <AssetPagination
+          currentPage={page}
+          totalPages={totalPages}
+          totalItems={filteredAssets.length}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={(size) => {
+            setPageSize(size);
+            setPage(1);
+          }}
+        />
       )}
 
       {/* Preview Dialog */}
@@ -1464,6 +1589,18 @@ export function AssetsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Folder Create/Edit Dialog */}
+      <FolderCreateDialog
+        open={showFolderDialog}
+        onOpenChange={setShowFolderDialog}
+        mode={folderDialogMode}
+        folder={editingFolder ?? undefined}
+        existingFolders={folders}
+        onSubmit={handleFolderSubmit}
+      />
+    </div>
+    {/* End main content */}
     </div>
   );
 }

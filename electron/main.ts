@@ -891,6 +891,57 @@ ipcMain.handle("scan-assets-directory", async () => {
   return files;
 });
 
+// Assets folder management
+const FOLDERS_STORAGE_KEY = "wavespeed_assets_folders";
+const TAG_CATEGORIES_STORAGE_KEY = "wavespeed_assets_tag_categories";
+
+ipcMain.handle("get-assets-folders", () => {
+  try {
+    const stored = store.get(FOLDERS_STORAGE_KEY) as
+      | Array<{ id: string; name: string; color: string; icon?: string; createdAt: string }>
+      | undefined;
+    return stored || [];
+  } catch {
+    return [];
+  }
+});
+
+ipcMain.handle("save-assets-folders", (_, folders) => {
+  try {
+    store.set(FOLDERS_STORAGE_KEY, folders);
+    return true;
+  } catch {
+    return false;
+  }
+});
+
+// Assets tag category management
+ipcMain.handle("get-assets-tag-categories", () => {
+  try {
+    const stored = store.get(TAG_CATEGORIES_STORAGE_KEY) as
+      | Array<{
+          id: string;
+          name: string;
+          color: "default" | "red" | "orange" | "yellow" | "green" | "blue" | "purple" | "pink";
+          tags: string[];
+          createdAt: string;
+        }>
+      | undefined;
+    return stored || [];
+  } catch {
+    return [];
+  }
+});
+
+ipcMain.handle("save-assets-tag-categories", (_, categories) => {
+  try {
+    store.set(TAG_CATEGORIES_STORAGE_KEY, categories);
+    return true;
+  } catch {
+    return false;
+  }
+});
+
 // SD download path helpers for chunked downloads
 ipcMain.handle("sd-get-binary-download-path", () => {
   try {

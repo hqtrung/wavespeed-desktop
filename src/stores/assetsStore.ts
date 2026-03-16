@@ -5,10 +5,15 @@ import type {
   AssetsFilter,
   AssetsSaveOptions,
   AssetsSettings,
+  AssetFolder,
+  TagCategory,
+  TagColor,
 } from "@/types/asset";
 
 const METADATA_STORAGE_KEY = "wavespeed_assets_metadata";
 const SETTINGS_STORAGE_KEY = "wavespeed_assets_settings";
+const FOLDERS_STORAGE_KEY = "wavespeed_assets_folders";
+const TAG_CATEGORIES_STORAGE_KEY = "wavespeed_assets_tag_categories";
 
 // Track whether we've subscribed to the IPC event for new assets from workflow executor
 let assetsIpcListenerRegistered = false;
@@ -165,9 +170,15 @@ interface AssetsState {
   isLoading: boolean;
   settings: AssetsSettings;
 
+  // Folder and tag category state
+  folders: AssetFolder[];
+  tagCategories: TagCategory[];
+
   // Data loading
   loadAssets: () => Promise<void>;
   loadSettings: () => Promise<void>;
+  loadFolders: () => Promise<void>;
+  loadTagCategories: () => Promise<void>;
 
   // Asset operations
   saveAsset: (
@@ -184,7 +195,7 @@ interface AssetsState {
   deleteAssets: (ids: string[]) => Promise<number>;
   updateAsset: (
     id: string,
-    updates: Partial<Pick<AssetMetadata, "tags" | "favorite">>,
+    updates: Partial<Pick<AssetMetadata, "tags" | "favorite" | "folderId">>,
   ) => Promise<void>;
 
   // Filtering
@@ -192,7 +203,35 @@ interface AssetsState {
 
   // Tag operations
   getAllTags: () => string[];
+  getAllTagsWithCategories: () => Map<string, TagCategory | null>;
   getAllModels: () => string[];
+
+  // Folder operations
+  createFolder: (name: string, color: string) => Promise<AssetFolder>;
+  updateFolder: (
+    id: string,
+    updates: Partial<Pick<AssetFolder, "name" | "color" | "icon">>,
+  ) => Promise<void>;
+  deleteFolder: (
+    id: string,
+    moveAssetsTo?: string | null,
+  ) => Promise<void>;
+  moveAssetsToFolder: (
+    assetIds: string[],
+    folderId: string | null,
+  ) => Promise<void>;
+
+  // Tag category operations
+  createTagCategory: (
+    name: string,
+    color: TagColor,
+    tags?: string[],
+  ) => Promise<TagCategory>;
+  updateTagCategory: (
+    id: string,
+    updates: Partial<Pick<TagCategory, "name" | "color" | "tags">>,
+  ) => Promise<void>;
+  deleteTagCategory: (id: string) => Promise<void>;
 
   // Settings
   setAutoSave: (enabled: boolean) => Promise<void>;
@@ -214,6 +253,8 @@ export const useAssetsStore = create<AssetsState>((set, get) => ({
     autoSaveAssets: true,
     assetsDirectory: "",
   },
+  folders: [],
+  tagCategories: [],
 
   loadAssets: async () => {
     // Prevent duplicate loading
@@ -286,6 +327,10 @@ export const useAssetsStore = create<AssetsState>((set, get) => ({
             >[0],
           );
         }
+
+        // Load folders and tag categories
+        get().loadFolders();
+        get().loadTagCategories();
       } else {
         // Browser fallback - limited functionality
         const stored = localStorage.getItem(METADATA_STORAGE_KEY);
@@ -566,6 +611,11 @@ export const useAssetsStore = create<AssetsState>((set, get) => ({
       filtered = filtered.filter((a) => a.favorite);
     }
 
+    // Filter by folder (null = show all including legacy assets without folderId)
+    if (filter.folderId != null) {
+      filtered = filtered.filter((a) => a.folderId === filter.folderId);
+    }
+
     // Search
     if (filter.search && filter.search.trim()) {
       const search = filter.search.toLowerCase();
@@ -661,5 +711,194 @@ export const useAssetsStore = create<AssetsState>((set, get) => ({
   validateAssets: async () => {
     // No-op: assets are now loaded directly from disk scan, so validation is not needed
     // The loadAssets function scans actual files and merges with metadata
+  },
+
+  // ===== FOLDER OPERATIONS =====
+
+  loadFolders: async () => {
+    if (window.electronAPI?.getAssetsFolders) {
+      const folders = await window.electronAPI.getAssetsFolders();
+      set({ folders });
+    } else {
+      const stored = localStorage.getItem(FOLDERS_STORAGE_KEY);
+      set({ folders: stored ? JSON.parse(stored) : [] });
+    }
+  },
+
+  createFolder: async (name, color) => {
+    const folder: AssetFolder = {
+      id: generateId(),
+      name,
+      color,
+      createdAt: new Date().toISOString(),
+    };
+    set((state) => {
+      const newFolders = [...state.folders, folder];
+      if (window.electronAPI?.saveAssetsFolders) {
+        window.electronAPI.saveAssetsFolders(
+          newFolders as Parameters<typeof window.electronAPI.saveAssetsFolders>[0],
+        );
+      } else {
+        localStorage.setItem(FOLDERS_STORAGE_KEY, JSON.stringify(newFolders));
+      }
+      return { folders: newFolders };
+    });
+    return folder;
+  },
+
+  updateFolder: async (id, updates) => {
+    set((state) => {
+      const newFolders = state.folders.map((f) =>
+        f.id === id ? { ...f, ...updates } : f,
+      );
+      if (window.electronAPI?.saveAssetsFolders) {
+        window.electronAPI.saveAssetsFolders(
+          newFolders as Parameters<typeof window.electronAPI.saveAssetsFolders>[0],
+        );
+      } else {
+        localStorage.setItem(FOLDERS_STORAGE_KEY, JSON.stringify(newFolders));
+      }
+      return { folders: newFolders };
+    });
+  },
+
+  deleteFolder: async (id, moveAssetsTo) => {
+    set((state) => {
+      const newFolders = state.folders.filter((f) => f.id !== id);
+      const newAssets = moveAssetsTo !== undefined
+        ? state.assets.map((a) =>
+            a.folderId === id ? { ...a, folderId: moveAssetsTo } : a,
+          )
+        : state.assets.map((a) =>
+            a.folderId === id ? { ...a, folderId: undefined } : a,
+          );
+
+      if (window.electronAPI?.saveAssetsFolders) {
+        window.electronAPI.saveAssetsFolders(
+          newFolders as Parameters<typeof window.electronAPI.saveAssetsFolders>[0],
+        );
+      } else {
+        localStorage.setItem(FOLDERS_STORAGE_KEY, JSON.stringify(newFolders));
+      }
+
+      if (window.electronAPI?.saveAssetsMetadata) {
+        window.electronAPI.saveAssetsMetadata(
+          newAssets as Parameters<typeof window.electronAPI.saveAssetsMetadata>[0],
+        );
+      } else {
+        localStorage.setItem(METADATA_STORAGE_KEY, JSON.stringify(newAssets));
+      }
+
+      return { folders: newFolders, assets: newAssets };
+    });
+  },
+
+  moveAssetsToFolder: async (assetIds, folderId) => {
+    set((state) => {
+      const newAssets = state.assets.map((a) =>
+        assetIds.includes(a.id) ? { ...a, folderId: folderId || undefined } : a,
+      );
+
+      if (window.electronAPI?.saveAssetsMetadata) {
+        window.electronAPI.saveAssetsMetadata(
+          newAssets as Parameters<typeof window.electronAPI.saveAssetsMetadata>[0],
+        );
+      } else {
+        localStorage.setItem(METADATA_STORAGE_KEY, JSON.stringify(newAssets));
+      }
+
+      return { assets: newAssets };
+    });
+  },
+
+  // ===== TAG CATEGORY OPERATIONS =====
+
+  loadTagCategories: async () => {
+    if (window.electronAPI?.getAssetsTagCategories) {
+      const tagCategories = await window.electronAPI.getAssetsTagCategories();
+      set({ tagCategories });
+    } else {
+      const stored = localStorage.getItem(TAG_CATEGORIES_STORAGE_KEY);
+      set({ tagCategories: stored ? JSON.parse(stored) : [] });
+    }
+  },
+
+  createTagCategory: async (name, color, tags = []) => {
+    const category: TagCategory = {
+      id: generateId(),
+      name,
+      color,
+      tags,
+      createdAt: new Date().toISOString(),
+    };
+    set((state) => {
+      const newCategories = [...state.tagCategories, category];
+      if (window.electronAPI?.saveAssetsTagCategories) {
+        window.electronAPI.saveAssetsTagCategories(
+          newCategories as Parameters<typeof window.electronAPI.saveAssetsTagCategories>[0],
+        );
+      } else {
+        localStorage.setItem(TAG_CATEGORIES_STORAGE_KEY, JSON.stringify(newCategories));
+      }
+      return { tagCategories: newCategories };
+    });
+    return category;
+  },
+
+  updateTagCategory: async (id, updates) => {
+    set((state) => {
+      const newCategories = state.tagCategories.map((c) =>
+        c.id === id ? { ...c, ...updates } : c,
+      );
+      if (window.electronAPI?.saveAssetsTagCategories) {
+        window.electronAPI.saveAssetsTagCategories(
+          newCategories as Parameters<typeof window.electronAPI.saveAssetsTagCategories>[0],
+        );
+      } else {
+        localStorage.setItem(TAG_CATEGORIES_STORAGE_KEY, JSON.stringify(newCategories));
+      }
+      return { tagCategories: newCategories };
+    });
+  },
+
+  deleteTagCategory: async (id) => {
+    set((state) => {
+      const newCategories = state.tagCategories.filter((c) => c.id !== id);
+      if (window.electronAPI?.saveAssetsTagCategories) {
+        window.electronAPI.saveAssetsTagCategories(
+          newCategories as Parameters<typeof window.electronAPI.saveAssetsTagCategories>[0],
+        );
+      } else {
+        localStorage.setItem(TAG_CATEGORIES_STORAGE_KEY, JSON.stringify(newCategories));
+      }
+      return { tagCategories: newCategories };
+    });
+  },
+
+  getAllTagsWithCategories: () => {
+    const { assets, tagCategories } = get();
+    const tagMap = new Map<string, TagCategory | null>();
+
+    // Collect all tags from assets
+    const allTags = new Set<string>();
+    assets.forEach((a) => a.tags.forEach((t) => allTags.add(t)));
+
+    // Map tags to their categories
+    tagCategories.forEach((category) => {
+      category.tags.forEach((tag) => {
+        if (allTags.has(tag)) {
+          tagMap.set(tag, category);
+        }
+      });
+    });
+
+    // Tags without categories remain as null
+    allTags.forEach((tag) => {
+      if (!tagMap.has(tag)) {
+        tagMap.set(tag, null);
+      }
+    });
+
+    return tagMap;
   },
 }));

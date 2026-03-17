@@ -284,18 +284,32 @@ class HistorySyncService {
           // Fetch details to get full inputs
           const details = await fetchDetails(item.id);
 
+          console.log(`[History Sync] Details for ${item.id}:`, details);
+          console.log(`[History Sync] Has input field:`, !!details.input);
+
           if (details.input) {
             // Extract image URLs from inputs
             const urls = this.extractImageUrls(details.input);
+
+            console.log(`[History Sync] Extracted ${urls.length} image URLs for ${item.id}`);
 
             if (urls.length > 0) {
               itemsWithImages.push({ predictionId: item.id, urls });
 
               // Update database with input details
+              console.log(`[History Sync] Updating input details for ${item.id}`);
               predictionRepo.updatePredictionInputDetails(
                 item.id,
                 details.input,
                 [], // Will be filled after download
+              );
+            } else {
+              // Still save input details even if no images (prompts, etc.)
+              console.log(`[History Sync] No images but saving input details for ${item.id}`);
+              predictionRepo.updatePredictionInputDetails(
+                item.id,
+                details.input,
+                [],
               );
             }
           }

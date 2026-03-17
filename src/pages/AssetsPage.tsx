@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback, useMemo, useRef, memo } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAssetsStore } from "@/stores/assetsStore";
 import { usePlaygroundStore } from "@/stores/playgroundStore";
 import { useModelsStore } from "@/stores/modelsStore";
@@ -49,7 +49,6 @@ import {
 } from "@/components/ui/alert-dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "@/hooks/useToast";
-import { useInView } from "@/hooks/useInView";
 import { cn } from "@/lib/utils";
 import {
   Search,
@@ -62,6 +61,7 @@ import {
   MoreVertical,
   Trash2,
   FolderOpen,
+  FolderMinus,
   Download,
   Eye,
   EyeOff,
@@ -87,344 +87,21 @@ import type {
   AssetsFilter,
   AssetFolder,
 } from "@/types/asset";
+import { NO_FOLDER_ID } from "@/types/asset";
 import {
   FolderSidebar,
   FolderCreateDialog,
-} from "@/components/assets/folder-sidebar";
-import { AssetPagination, usePaginationKeyboard } from "@/components/assets/pagination";
-
-// Video preview component - shows first frame, plays on hover
-function VideoPreview({ src, enabled }: { src: string; enabled: boolean }) {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const [isLoaded, setIsLoaded] = useState(false);
-  const [hasError, setHasError] = useState(false);
-
-  const handleMouseEnter = () => {
-    if (videoRef.current && isLoaded && enabled) {
-      videoRef.current.play().catch(() => {
-        // Ignore autoplay errors
-      });
-    }
-  };
-
-  const handleMouseLeave = () => {
-    if (videoRef.current) {
-      videoRef.current.pause();
-      videoRef.current.currentTime = 0;
-    }
-  };
-
-  // Show placeholder if disabled or error
-  if (!enabled || hasError) {
-    return (
-      <div className="w-full h-full flex items-center justify-center">
-        <Video className="h-12 w-12 text-muted-foreground" />
-      </div>
-    );
-  }
-
-  return (
-    <div
-      className="w-full h-full relative"
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
-    >
-      {!isLoaded && (
-        <div className="absolute inset-0 flex items-center justify-center bg-muted z-10">
-          <Video className="h-12 w-12 text-muted-foreground" />
-        </div>
-      )}
-      <video
-        ref={videoRef}
-        src={src}
-        className="w-full h-full object-cover"
-        muted
-        loop
-        playsInline
-        preload="metadata"
-        onLoadedData={() => setIsLoaded(true)}
-        onError={() => setHasError(true)}
-      />
-    </div>
-  );
-}
-
-// Asset type icon component
-function AssetTypeIcon({
-  type,
-  className,
-}: {
-  type: AssetType;
-  className?: string;
-}) {
-  switch (type) {
-    case "image":
-      return <Image className={className} />;
-    case "video":
-      return <Video className={className} />;
-    case "audio":
-      return <Music className={className} />;
-    case "text":
-    case "json":
-      return <FileText className={className} />;
-  }
-}
-
-// Format date
-function formatDate(dateStr: string): string {
-  const date = new Date(dateStr);
-  return date.toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
-
-// Check if running in desktop mode
-const isDesktopMode = !!window.electronAPI?.saveAsset;
-
-// Get asset URL for preview (local-asset:// in desktop for proper video/audio support)
-function getAssetUrl(asset: AssetMetadata): string {
-  if (asset.filePath) {
-    // Use custom protocol for local files to ensure proper media loading in Electron
-    return `local-asset://${encodeURIComponent(asset.filePath)}`;
-  }
-  return asset.originalUrl || "";
-}
-
-// ── Memoized AssetCard (prevents full-list remount on dialog open/close) ──
-
-interface AssetCardProps {
-  asset: AssetMetadata;
-  assetKey: string;
-  index: number;
-  loadPreviews: boolean;
-  isSelectionMode: boolean;
-  isSelected: boolean;
-  onToggleSelect: (id: string) => void;
-  onSelect: (asset: AssetMetadata) => void;
-  onOpenLocation: (asset: AssetMetadata) => void;
-  onDownload: (asset: AssetMetadata) => void;
-  onToggleFavorite: (asset: AssetMetadata) => void;
-  onManageTags: (asset: AssetMetadata) => void;
-  onDelete: (asset: AssetMetadata) => void;
-  onPreviewLoaded: (key: string) => void;
-  onCustomize: (asset: AssetMetadata) => void;
-}
-
-const AssetCard = memo(function AssetCard({
-  asset,
-  assetKey,
-  index,
-  loadPreviews,
-  isSelectionMode,
-  isSelected,
-  onToggleSelect,
-  onSelect,
-  onOpenLocation,
-  onDownload,
-  onToggleFavorite,
-  onManageTags,
-  onDelete,
-  onPreviewLoaded,
-  onCustomize,
-}: AssetCardProps) {
-  const { t } = useTranslation();
-  const { ref, isInView } = useInView<HTMLDivElement>();
-  const assetUrl = getAssetUrl(asset);
-  const shouldLoad = loadPreviews && isInView;
-
-  useEffect(() => {
-    if (!loadPreviews || !isInView || !assetUrl) return;
-    onPreviewLoaded(assetKey);
-  }, [assetKey, assetUrl, isInView, loadPreviews, onPreviewLoaded]);
-
-  return (
-    <div
-      className={cn(
-        "group relative overflow-hidden rounded-xl border border-border/70 bg-card/85 shadow-sm transition-all hover:shadow-md animate-in fade-in slide-in-from-bottom-2 fill-mode-both",
-        isSelected && "ring-2 ring-primary",
-      )}
-      style={{ animationDelay: `${Math.min(index, 19) * 30}ms` }}
-    >
-      {/* Thumbnail */}
-      <div
-        ref={ref}
-        className="aspect-square bg-muted flex items-center justify-center cursor-pointer"
-        onClick={() =>
-          isSelectionMode ? onToggleSelect(asset.id) : onSelect(asset)
-        }
-      >
-        {asset.type === "image" && shouldLoad && assetUrl ? (
-          <img
-            src={assetUrl}
-            alt={asset.fileName}
-            className="w-full h-full object-cover"
-            loading="lazy"
-            decoding="async"
-          />
-        ) : asset.type === "video" && shouldLoad && assetUrl ? (
-          <VideoPreview src={assetUrl} enabled={shouldLoad} />
-        ) : (
-          <AssetTypeIcon
-            type={asset.type}
-            className="h-12 w-12 text-muted-foreground"
-          />
-        )}
-
-        {/* Selection checkbox overlay */}
-        {isSelectionMode && (
-          <div
-            className="absolute top-2 left-2"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <Checkbox
-              checked={isSelected}
-              onCheckedChange={() => onToggleSelect(asset.id)}
-              className="bg-background"
-            />
-          </div>
-        )}
-
-        {/* Type badge */}
-        {!isSelectionMode && (
-          <Badge variant="secondary" className="absolute top-2 left-2 text-xs">
-            <AssetTypeIcon type={asset.type} className="h-3 w-3 mr-1" />
-            {t(`assets.types.${asset.type}`)}
-          </Badge>
-        )}
-        {/* Quick actions — top right */}
-        {!isSelectionMode && (
-          <div className="absolute top-2 right-2 flex gap-1.5 z-10">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onToggleFavorite(asset);
-              }}
-              className={cn(
-                "flex items-center justify-center w-6 h-6 rounded-md backdrop-blur-sm transition-colors",
-                asset.favorite
-                  ? "bg-yellow-500/80 text-white hover:bg-yellow-500"
-                  : "bg-black/60 text-white hover:bg-black/80",
-              )}
-              title={
-                asset.favorite ? t("assets.unfavorite") : t("assets.favorite")
-              }
-            >
-              <Star
-                className={cn("h-3 w-3", asset.favorite && "fill-current")}
-              />
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Info */}
-      <div className="p-2">
-        <div className="flex items-start justify-between gap-1">
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium truncate" title={asset.fileName}>
-              {asset.fileName}
-            </p>
-            {asset.source === "workflow" && asset.workflowName ? (
-              <p
-                className="text-xs text-blue-400 truncate flex items-center gap-1"
-                title={`Workflow: ${asset.workflowName}`}
-              >
-                <GitBranch className="h-3 w-3 shrink-0" />
-                {asset.workflowName}
-              </p>
-            ) : (
-              <p
-                className="text-xs text-muted-foreground truncate"
-                title={asset.modelId}
-              >
-                {asset.modelId}
-              </p>
-            )}
-            <p className="text-xs text-muted-foreground">
-              {formatDate(asset.createdAt)} · {formatBytes(asset.fileSize)}
-            </p>
-          </div>
-
-          {/* Actions */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 shrink-0 rounded-lg text-muted-foreground hover:text-foreground"
-              >
-                <MoreVertical className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => onCustomize(asset)}>
-                <Sparkles className="mr-2 h-4 w-4" />
-                {t("common.customize", "Customize")}
-              </DropdownMenuItem>
-              {isDesktopMode ? (
-                <DropdownMenuItem onClick={() => onOpenLocation(asset)}>
-                  <FolderOpen className="mr-2 h-4 w-4" />
-                  {t("assets.openLocation")}
-                </DropdownMenuItem>
-              ) : (
-                <DropdownMenuItem onClick={() => onDownload(asset)}>
-                  <Download className="mr-2 h-4 w-4" />
-                  {t("common.download")}
-                </DropdownMenuItem>
-              )}
-              <DropdownMenuItem onClick={() => onToggleFavorite(asset)}>
-                <Star
-                  className={cn(
-                    "mr-2 h-4 w-4",
-                    asset.favorite && "fill-yellow-400",
-                  )}
-                />
-                {asset.favorite ? t("assets.unfavorite") : t("assets.favorite")}
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onManageTags(asset)}>
-                <Tag className="mr-2 h-4 w-4" />
-                {t("assets.manageTags")}
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onClick={() => onDelete(asset)}
-                className="text-destructive"
-              >
-                <Trash2 className="mr-2 h-4 w-4" />
-                {t("common.delete")}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-
-        {/* Tags */}
-        {asset.tags.length > 0 && (
-          <div className="flex flex-wrap gap-1 mt-2">
-            {asset.tags.slice(0, 3).map((tag) => (
-              <Badge
-                key={tag}
-                variant="outline"
-                className="rounded-md border-border/70 bg-background text-xs"
-              >
-                {tag}
-              </Badge>
-            ))}
-            {asset.tags.length > 3 && (
-              <Badge
-                variant="outline"
-                className="rounded-md border-border/70 bg-background text-xs"
-              >
-                +{asset.tags.length - 3}
-              </Badge>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-});
+  AssetCard,
+  AssetTypeIcon,
+  getAssetUrl,
+  formatDate,
+  TagFilterChips,
+  BulkTagEditDialog,
+  AssetPagination,
+  usePaginationKeyboard,
+  isDesktopMode,
+} from "@/components/assets";
+import { getFolderColorClass } from "@/components/assets/folder-sidebar";
 
 export function AssetsPage() {
   const { t } = useTranslation();
@@ -463,6 +140,17 @@ export function AssetsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [showFilters, setShowFilters] = useState(false);
 
+  // URL search params for filtering by predictionId
+  const [searchParams] = useSearchParams();
+  const predictionIdFilter = searchParams.get("predictionId");
+
+  // Resizable sidebar state
+  const [sidebarWidth, setSidebarWidth] = useState(240); // Default width in px
+  const [isResizing, setIsResizing] = useState(false);
+  const MIN_SIDEBAR_WIDTH = 180;
+  const MAX_SIDEBAR_WIDTH = 600; // Increased from 400
+  const [isCollapsed, setIsCollapsed] = useState(false); // Collapsible folder panel
+
   // Selection state
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isSelectionMode, setIsSelectionMode] = useState(false);
@@ -476,10 +164,13 @@ export function AssetsPage() {
   const [tagDialogAsset, setTagDialogAsset] = useState<AssetMetadata | null>(
     null,
   );
+  const [showBulkTagEdit, setShowBulkTagEdit] = useState(false);
+  const [showBulkFolderMove, setShowBulkFolderMove] = useState(false);
   const [newTag, setNewTag] = useState("");
 
   // Loading state
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isProcessingTags, setIsProcessingTags] = useState(false);
 
   // Pagination state
   const [page, setPage] = useState(1);
@@ -526,8 +217,15 @@ export function AssetsPage() {
 
   // Get filtered assets
   const filteredAssets = useMemo(() => {
-    return getFilteredAssets(filter);
-  }, [getFilteredAssets, filter, assets]);
+    let filtered = getFilteredAssets(filter);
+    // Apply predictionId filter from URL
+    if (predictionIdFilter) {
+      filtered = filtered.filter(
+        (a) => a.predictionId === predictionIdFilter,
+      );
+    }
+    return filtered;
+  }, [getFilteredAssets, filter, assets, predictionIdFilter]);
 
   // Pagination
   const totalPages = Math.ceil(filteredAssets.length / pageSize);
@@ -535,6 +233,67 @@ export function AssetsPage() {
     const start = (page - 1) * pageSize;
     return filteredAssets.slice(start, start + pageSize);
   }, [filteredAssets, page, pageSize]);
+
+  // Keyboard shortcut: Cmd+M to toggle selection mode
+  useEffect(() => {
+    if (!isActive) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Cmd+M or Ctrl+M
+      if ((e.metaKey || e.ctrlKey) && e.key === "m") {
+        e.preventDefault();
+        setIsSelectionMode((prev) => {
+          const newValue = !prev;
+          // Clear selection when exiting mode
+          if (!newValue) {
+            setSelectedIds(new Set());
+          }
+          return newValue;
+        });
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isActive]);
+
+  // Sidebar resize handlers
+  const handleResizeStart = useCallback(() => {
+    setIsResizing(true);
+  }, []);
+
+  const handleResizeEnd = useCallback(() => {
+    setIsResizing(false);
+  }, []);
+
+  const handleResize = useCallback(
+    (e: MouseEvent) => {
+      if (!isResizing) return;
+      const newWidth = e.clientX;
+      if (newWidth >= MIN_SIDEBAR_WIDTH && newWidth <= MAX_SIDEBAR_WIDTH) {
+        setSidebarWidth(newWidth);
+      }
+    },
+    [isResizing],
+  );
+
+  useEffect(() => {
+    if (isResizing) {
+      window.addEventListener("mousemove", handleResize);
+      window.addEventListener("mouseup", handleResizeEnd);
+      // Prevent text selection during resize
+      document.body.style.userSelect = "none";
+      return () => {
+        window.removeEventListener("mousemove", handleResize);
+        window.removeEventListener("mouseup", handleResizeEnd);
+        document.body.style.userSelect = "";
+      };
+    }
+  }, [isResizing, handleResize, handleResizeEnd]);
+
+  const toggleSidebarCollapse = useCallback(() => {
+    setIsCollapsed((prev) => !prev);
+  }, []);
 
   // Keyboard navigation for pagination (moved after totalPages is defined)
   usePaginationKeyboard({
@@ -827,6 +586,95 @@ export function AssetsPage() {
     [updateAsset],
   );
 
+  // Bulk tag handlers
+  const handleBulkAddTag = useCallback(
+    async (tag: string) => {
+      setIsProcessingTags(true);
+      try {
+        const updates = Array.from(selectedIds).map((id) =>
+          updateAsset(id, {
+            tags: [
+              ...(assets.find((a) => a.id === id)?.tags || []),
+              tag,
+            ],
+          }),
+        );
+        await Promise.all(updates);
+        toast({
+          title: t("assets.addTag"),
+          description: t("assets.bulkFavoriteDesc", { count: selectedIds.size }),
+        });
+      } finally {
+        setIsProcessingTags(false);
+      }
+    },
+    [selectedIds, assets, updateAsset, t],
+  );
+
+  const handleBulkRemoveTag = useCallback(
+    async (tag: string) => {
+      setIsProcessingTags(true);
+      try {
+        const updates = Array.from(selectedIds).map((id) =>
+          updateAsset(id, {
+            tags: (assets.find((a) => a.id === id)?.tags || []).filter(
+              (t) => t !== tag,
+            ),
+          }),
+        );
+        await Promise.all(updates);
+        toast({
+          title: t("assets.removeTagFromAll"),
+          description: t("assets.bulkFavoriteDesc", { count: selectedIds.size }),
+        });
+      } finally {
+        setIsProcessingTags(false);
+      }
+    },
+    [selectedIds, assets, updateAsset, t],
+  );
+
+  const handleBulkReplaceTag = useCallback(
+    async (oldTag: string, newTag: string) => {
+      setIsProcessingTags(true);
+      try {
+        const updates = Array.from(selectedIds).map((id) => {
+          const asset = assets.find((a) => a.id === id);
+          const tags = asset?.tags || [];
+          return updateAsset(id, {
+            tags: tags.map((t) => (t === oldTag ? newTag : t)),
+          });
+        });
+        await Promise.all(updates);
+        toast({
+          title: t("assets.replaceTag"),
+          description: t("assets.bulkFavoriteDesc", { count: selectedIds.size }),
+        });
+      } finally {
+        setIsProcessingTags(false);
+      }
+    },
+    [selectedIds, assets, updateAsset, t],
+  );
+
+  const handleTagFilterToggle = useCallback(
+    (tag: string) => {
+      setFilter((f) => {
+        const current = f.tags || [];
+        if (current.includes(tag)) {
+          return { ...f, tags: current.filter((t) => t !== tag) };
+        }
+        return { ...f, tags: [...current, tag] };
+      });
+    },
+    [],
+  );
+
+  const handleClearTagFilters = useCallback(() => {
+    setFilter((f) => ({ ...f, tags: [] }));
+  }, []);
+
+
   const handleOpenAssetsFolder = useCallback(async () => {
     if (window.electronAPI?.openAssetsFolder) {
       await window.electronAPI.openAssetsFolder();
@@ -838,6 +686,9 @@ export function AssetsPage() {
     (folderId: string | null) => {
       if (folderId === null) {
         return assets.length;
+      }
+      if (folderId === NO_FOLDER_ID) {
+        return assets.filter((a) => !a.folderId).length;
       }
       return assets.filter((a) => a.folderId === folderId).length;
     },
@@ -902,6 +753,9 @@ export function AssetsPage() {
   const handleAssetsMove = useCallback(
     async (assetIds: string[], folderId: string | null) => {
       await moveAssetsToFolder(assetIds, folderId);
+      // Clear selection after move
+      setSelectedIds(new Set());
+      setIsSelectionMode(false);
       toast({
         title: t("assets.folders.assetsMoved", "Assets moved"),
         description: t("assets.folders.assetsMovedDesc", "{{count}} asset(s) moved to folder", {
@@ -958,20 +812,52 @@ export function AssetsPage() {
   return (
     <div className="flex h-full pt-12 md:pt-0">
       {/* Folder Sidebar */}
-      <FolderSidebar
-        folders={folders}
-        activeFolderId={activeFolderId}
-        onFolderSelect={setActiveFolderId}
-        onFolderCreate={handleFolderCreate}
-        onFolderUpdate={(f, updates) => {
-          if (updates.name || updates.color) {
-            handleFolderEdit(f);
-          }
-        }}
-        onFolderDelete={handleFolderDelete}
-        onAssetsMove={handleAssetsMove}
-        getAssetCount={handleGetFolderAssetCount}
-      />
+      {!isCollapsed && (
+        <div style={{ width: `${sidebarWidth}px`, minWidth: `${MIN_SIDEBAR_WIDTH}px`, maxWidth: `${MAX_SIDEBAR_WIDTH}px` }} className="flex-shrink-0 relative">
+          {/* Collapse button */}
+          <button
+            className="absolute top-2 right-2 z-10 p-1 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+            onClick={toggleSidebarCollapse}
+            title={t("assets.collapseFolderPanel", "Collapse")}
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <FolderSidebar
+            folders={folders}
+            activeFolderId={activeFolderId}
+            onFolderSelect={setActiveFolderId}
+            onFolderCreate={handleFolderCreate}
+            onFolderUpdate={(f, updates) => {
+              if (updates.name || updates.color) {
+                handleFolderEdit(f);
+              }
+            }}
+            onFolderDelete={handleFolderDelete}
+            onAssetsMove={handleAssetsMove}
+            getAssetCount={handleGetFolderAssetCount}
+          />
+        </div>
+      )}
+
+      {/* Resize Handle / Expand Button when collapsed */}
+      {isCollapsed ? (
+        <button
+          className="w-1 bg-border/50 hover:bg-primary/50 cursor-pointer flex-shrink-0 transition-colors flex items-center justify-center group"
+          onClick={toggleSidebarCollapse}
+          title={t("assets.expandFolderPanel", "Expand")}
+        >
+          <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+        </button>
+      ) : (
+        <div
+          className={cn(
+            "w-1 bg-border/50 hover:bg-primary/50 cursor-col-resize flex-shrink-0 transition-colors relative z-50",
+            isResizing && "bg-primary cursor-col-resizing",
+          )}
+          style={{ cursor: isResizing ? "col-resize" : "col-resize" }}
+          onMouseDown={handleResizeStart}
+        />
+      )}
 
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0">
@@ -986,6 +872,23 @@ export function AssetsPage() {
             {t("assets.subtitle", { count: assets.length })}
           </p>
         </div>
+
+        {/* Prediction ID Filter Banner */}
+        {predictionIdFilter && (
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/10 border border-primary/20 mb-3">
+            <span className="text-sm text-primary">
+              {t("assets.filteredByPrediction", "Filtered by prediction:")} {predictionIdFilter.slice(0, 8)}...
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 px-2 text-primary hover:bg-primary/20"
+              onClick={() => navigate("/assets")}
+            >
+              <X className="h-3 w-3" />
+            </Button>
+          </div>
+        )}
 
         {/* Toolbar */}
         <div className="flex flex-wrap items-center gap-2">
@@ -1116,6 +1019,22 @@ export function AssetsPage() {
                     {t("assets.removeFromFavorites")}
                   </Button>
                   <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowBulkTagEdit(true)}
+                  >
+                    <Tag className="mr-2 h-4 w-4" />
+                    {t("assets.manageTags")}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowBulkFolderMove(true)}
+                  >
+                    <FolderHeart className="mr-2 h-4 w-4" />
+                    {t("assets.moveToFolder")}
+                  </Button>
+                  <Button
                     variant="destructive"
                     size="sm"
                     onClick={() => setShowBulkDeleteConfirm(true)}
@@ -1243,6 +1162,16 @@ export function AssetsPage() {
                 },
               )}
             </div>
+
+            {/* Tag filter chips */}
+            <div className="pl-3">
+              <TagFilterChips
+                allTags={allTags}
+                activeTags={filter.tags || []}
+                onTagToggle={handleTagFilterToggle}
+                onClearAll={handleClearTagFilters}
+              />
+            </div>
           </div>
         )}
       </div>
@@ -1273,6 +1202,7 @@ export function AssetsPage() {
                   loadPreviews={loadPreviews}
                   isSelectionMode={isSelectionMode}
                   isSelected={selectedIds.has(asset.id)}
+                  selectedIds={selectedIds}
                   onToggleSelect={handleToggleSelect}
                   onSelect={setPreviewAsset}
                   onOpenLocation={handleOpenLocation}
@@ -1585,6 +1515,84 @@ export function AssetsPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setTagDialogAsset(null)}>
               {t("common.done")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Tag Edit Dialog */}
+      <BulkTagEditDialog
+        open={showBulkTagEdit}
+        onOpenChange={setShowBulkTagEdit}
+        selectedCount={selectedIds.size}
+        availableTags={allTags}
+        onAddTag={handleBulkAddTag}
+        onRemoveTag={handleBulkRemoveTag}
+        onReplaceTag={handleBulkReplaceTag}
+        isProcessing={isProcessingTags}
+      />
+
+      {/* Bulk Folder Move Dialog */}
+      <Dialog open={showBulkFolderMove} onOpenChange={setShowBulkFolderMove}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {t("assets.moveToFolder", "Move to Folder")}
+            </DialogTitle>
+            <DialogDescription>
+              {t("assets.moveToFolderDescription", {
+                count: selectedIds.size,
+              })}
+            </DialogDescription>
+          </DialogHeader>
+          <ScrollArea className="max-h-[60vh]">
+            <div className="space-y-2 py-4 pr-4">
+              {/* "No Folder" option */}
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                onClick={() => {
+                  moveAssetsToFolder(Array.from(selectedIds), null);
+                  setShowBulkFolderMove(false);
+                  setSelectedIds(new Set());
+                  setIsSelectionMode(false);
+                }}
+              >
+                <FolderMinus className="mr-2 h-4 w-4" />
+                {t("assets.folders.noFolder", "No Folder")}
+              </Button>
+              {/* Folder list */}
+              {folders.map((folder) => (
+                <Button
+                  key={folder.id}
+                  variant="outline"
+                  className="w-full justify-start"
+                  onClick={() => {
+                    moveAssetsToFolder(Array.from(selectedIds), folder.id);
+                    setShowBulkFolderMove(false);
+                    setSelectedIds(new Set());
+                    setIsSelectionMode(false);
+                  }}
+                >
+                  <div
+                    className={cn(
+                      "h-3 w-1 rounded-full mr-2",
+                      getFolderColorClass(folder.color),
+                    )}
+                  />
+                  {folder.name}
+                </Button>
+              ))}
+              {folders.length === 0 && (
+                <p className="text-sm text-muted-foreground text-center py-4">
+                  {t("assets.folders.noFolders", "No folders yet")}
+                </p>
+              )}
+            </div>
+          </ScrollArea>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowBulkFolderMove(false)}>
+              {t("common.cancel", "Cancel")}
             </Button>
           </DialogFooter>
         </DialogContent>

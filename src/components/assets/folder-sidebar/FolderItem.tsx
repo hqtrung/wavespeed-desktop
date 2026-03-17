@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Folder, FolderOpen, MoreVertical, Trash2, Edit3 } from "lucide-react";
+import { Folder, FolderOpen, MoreVertical, Trash2, Edit3, FolderMinus } from "lucide-react";
 import type { AssetFolder } from "@/types/asset";
 import { getFolderColorClass } from "./folder-colors";
 import { cn } from "@/lib/utils";
@@ -21,6 +21,7 @@ interface FolderItemProps {
   onDelete?: (folder: AssetFolder) => void;
   onDrop?: (assetIds: string[]) => void;
   isCollapsed?: boolean;
+  isNoFolder?: boolean; // Special "No Folder" item for unassigned assets
 }
 
 export function FolderItem({
@@ -32,6 +33,7 @@ export function FolderItem({
   onDelete,
   onDrop,
   isCollapsed = false,
+  isNoFolder = false,
 }: FolderItemProps) {
   const { t } = useTranslation();
   const dragCounter = useRef(0);
@@ -40,10 +42,14 @@ export function FolderItem({
   const isAllAssets = folder === null;
   const folderName = isAllAssets
     ? t("assets.folders.allAssets")
-    : folder.name;
+    : isNoFolder
+      ? t("assets.folders.noFolder", "No Folder")
+      : folder.name;
   const colorClass = isAllAssets
     ? "bg-slate-500"
-    : getFolderColorClass(folder.color);
+    : isNoFolder
+      ? "bg-dashed border border-dashed border-muted-foreground/50"
+      : getFolderColorClass(folder.color);
 
   const handleDragEnter = (e: React.DragEvent) => {
     e.preventDefault();
@@ -91,6 +97,7 @@ export function FolderItem({
         isActive && "bg-accent",
         !isActive && "hover:bg-accent/50",
         isDraggingOver && "ring-2 ring-primary",
+        isNoFolder && "border border-dashed border-muted-foreground/30",
       )}
       onClick={onClick}
       onDragEnter={onDrop ? handleDragEnter : undefined}
@@ -99,10 +106,16 @@ export function FolderItem({
       onDrop={onDrop ? handleDrop : undefined}
     >
       {/* Color indicator */}
-      <div className={cn("h-3 w-1 shrink-0 rounded-full", colorClass)} />
+      {isNoFolder ? (
+        <div className="h-3 w-1 shrink-0 rounded-full bg-muted-foreground/40" />
+      ) : (
+        <div className={cn("h-3 w-1 shrink-0 rounded-full", colorClass)} />
+      )}
 
       {/* Folder icon */}
-      {isActive ? (
+      {isNoFolder ? (
+        <FolderMinus className="h-4 w-4 shrink-0 text-muted-foreground/60" />
+      ) : isActive ? (
         <FolderOpen className="h-4 w-4 shrink-0 text-muted-foreground" />
       ) : (
         <Folder className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -110,7 +123,14 @@ export function FolderItem({
 
       {/* Folder name */}
       {!isCollapsed && (
-        <span className="truncate flex-1 min-w-0">{folderName}</span>
+        <span
+          className={cn(
+            "truncate flex-1 min-w-0",
+            isNoFolder && "text-muted-foreground/70",
+          )}
+        >
+          {folderName}
+        </span>
       )}
 
       {/* Asset count */}
@@ -119,14 +139,15 @@ export function FolderItem({
           className={cn(
             "text-xs shrink-0",
             isActive ? "text-foreground" : "text-muted-foreground",
+            isNoFolder && "text-muted-foreground/60",
           )}
         >
           {assetCount}
         </span>
       )}
 
-      {/* Context menu for custom folders */}
-      {!isAllAssets && !isCollapsed && folder && onRename && onDelete && (
+      {/* Context menu for custom folders only (not for No Folder) */}
+      {!isAllAssets && !isNoFolder && !isCollapsed && folder && onRename && onDelete && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
             <Button

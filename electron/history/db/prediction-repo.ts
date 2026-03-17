@@ -51,29 +51,37 @@ export function upsertPredictions(items: HistoryItem[]): void {
   const db = getDatabase();
 
   for (const item of items) {
-    // Check if prediction already exists with inputs
-    const existing = db.exec("SELECT inputs FROM predictions WHERE id = ?", [item.id]);
+    // Check if prediction already exists with inputs/input_details/reference_images
+    const existing = db.exec(
+      "SELECT inputs, input_details, reference_images FROM predictions WHERE id = ?",
+      [item.id],
+    );
 
-    // Use existing inputs if available, otherwise empty object
+    // Use existing values if available, otherwise defaults
     let inputsJson = "{}";
+    let inputDetailsJson: string | null = null;
+    let referenceImagesJson: string | null = null;
+
     if (existing.length > 0 && existing[0].values.length > 0) {
-      const existingInputs = existing[0].values[0] as unknown[];
-      if (existingInputs[0]) {
-        inputsJson = existingInputs[0] as string;
-      }
+      const row = existing[0].values[0] as unknown[];
+      if (row[0]) inputsJson = row[0] as string;
+      if (row[1]) inputDetailsJson = row[1] as string;
+      if (row[2]) referenceImagesJson = row[2] as string;
     }
 
     db.run(
       `INSERT OR REPLACE INTO predictions (
-        id, model_id, status, outputs, inputs, created_at, updated_at,
-        execution_time, has_nsfw_contents, error, synced_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        id, model_id, status, outputs, inputs, input_details, reference_images,
+        created_at, updated_at, execution_time, has_nsfw_contents, error, synced_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         item.id,
         item.model,
         item.status,
         JSON.stringify(item.outputs ?? []),
         inputsJson, // preserve existing inputs
+        inputDetailsJson, // preserve existing input_details
+        referenceImagesJson, // preserve existing reference_images
         item.created_at,
         item.updated_at || item.created_at,
         item.execution_time ?? null,

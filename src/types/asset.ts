@@ -21,6 +21,7 @@ export interface AssetMetadata {
   tags: string[];
   favorite: boolean;
   predictionId?: string;
+  resultIndex?: number; // For batch predictions, which output index
   originalUrl?: string;
   source?: AssetSource;
   workflowId?: string;
@@ -40,7 +41,7 @@ export interface AssetsFilter {
   search?: string;
   sortBy?: AssetSortBy;
   sources?: AssetSource[];
-  folderId?: string | null; // Filter by folder (null = all assets)
+  folderId?: string | null | NoFolderId; // Filter by folder (null = all assets, "__none__" = unassigned)
 }
 
 export interface AssetsSaveOptions {
@@ -99,6 +100,10 @@ export type TagColor =
   | "blue"
   | "purple"
   | "pink";
+
+// Special value for filtering assets without a folder
+export const NO_FOLDER_ID = "__none__" as const;
+export type NoFolderId = typeof NO_FOLDER_ID;
 
 // Tag category for grouping and coloring tags
 export interface TagCategory {

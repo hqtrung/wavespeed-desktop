@@ -217,6 +217,7 @@ interface AssetMetadata {
   tags: string[];
   favorite: boolean;
   predictionId?: string;
+  resultIndex?: number;
   originalUrl?: string;
   source?: "playground" | "workflow" | "free-tool";
   workflowId?: string;
@@ -740,6 +741,41 @@ ipcMain.handle("save-assets-metadata", (_, metadata: AssetMetadata[]) => {
   return true;
 });
 
+// Deleted assets registry (prevents re-syncing intentionally deleted assets)
+const deletedAssetsPath = join(userDataPath, "deleted-assets.json");
+
+function loadDeletedAssets(): string[] {
+  try {
+    if (existsSync(deletedAssetsPath)) {
+      const data = readFileSync(deletedAssetsPath, "utf-8");
+      return JSON.parse(data);
+    }
+  } catch (error) {
+    console.error("Failed to load deleted assets:", error);
+  }
+  return [];
+}
+
+function saveDeletedAssetsFile(deletedAssets: string[]): void {
+  try {
+    if (!existsSync(userDataPath)) {
+      mkdirSync(userDataPath, { recursive: true });
+    }
+    writeFileSync(deletedAssetsPath, JSON.stringify(deletedAssets, null, 2));
+  } catch (error) {
+    console.error("Failed to save deleted assets:", error);
+  }
+}
+
+ipcMain.handle("get-deleted-assets", () => {
+  return loadDeletedAssets();
+});
+
+ipcMain.handle("save-deleted-assets", (_, deletedAssets: string[]) => {
+  saveDeletedAssetsFile(deletedAssets);
+  return true;
+});
+
 ipcMain.handle("open-file-location", async (_, filePath: string) => {
   if (existsSync(filePath)) {
     shell.showItemInFolder(filePath);
@@ -892,54 +928,116 @@ ipcMain.handle("scan-assets-directory", async () => {
 });
 
 // Assets folder management
-const FOLDERS_STORAGE_KEY = "wavespeed_assets_folders";
-const TAG_CATEGORIES_STORAGE_KEY = "wavespeed_assets_tag_categories";
+const FOLDERS_SCHEMA_VERSION = 1;
+const foldersPath = join(userDataPath, "assets-folders.json");
+const tagCategoriesPath = join(userDataPath, "assets-tag-categories.json");
+
+interface FoldersData {
+  version: number;
+  folders: Array<{
+    id: string;
+    name: string;
+    color: string;
+    icon?: string;
+    createdAt: string;
+  }>;
+}
+
+function loadAssetsFolders(): Array<{
+  id: string;
+  name: string;
+  color: string;
+  icon?: string;
+  createdAt: string;
+}> {
+  try {
+    if (existsSync(foldersPath)) {
+      const data = JSON.parse(readFileSync(foldersPath, "utf-8"));
+      // Handle both old format (direct array) and new format (with version)
+      if (Array.isArray(data)) {
+        return data; // Old format - migrate on next save
+      }
+      if (data.version === FOLDERS_SCHEMA_VERSION && Array.isArray(data.folders)) {
+        return data.folders;
+      }
+      // Version mismatch - return folders anyway, will migrate on save
+      return Array.isArray(data.folders) ? data.folders : [];
+    }
+  } catch {
+    /* corrupted file — start fresh */
+  }
+  return [];
+}
+
+function saveAssetsFolders(
+  folders: Array<{
+    id: string;
+    name: string;
+    color: string;
+    icon?: string;
+    createdAt: string;
+  }>,
+): boolean {
+  try {
+    if (!existsSync(userDataPath)) mkdirSync(userDataPath, { recursive: true });
+    const data: FoldersData = { version: FOLDERS_SCHEMA_VERSION, folders };
+    writeFileSync(foldersPath, JSON.stringify(data, null, 2));
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 ipcMain.handle("get-assets-folders", () => {
-  try {
-    const stored = store.get(FOLDERS_STORAGE_KEY) as
-      | Array<{ id: string; name: string; color: string; icon?: string; createdAt: string }>
-      | undefined;
-    return stored || [];
-  } catch {
-    return [];
-  }
+  return loadAssetsFolders();
 });
 
 ipcMain.handle("save-assets-folders", (_, folders) => {
-  try {
-    store.set(FOLDERS_STORAGE_KEY, folders);
-    return true;
-  } catch {
-    return false;
-  }
+  return saveAssetsFolders(folders);
 });
 
 // Assets tag category management
-ipcMain.handle("get-assets-tag-categories", () => {
+function loadAssetsTagCategories(): Array<{
+  id: string;
+  name: string;
+  color: "default" | "red" | "orange" | "yellow" | "green" | "blue" | "purple" | "pink";
+  tags: string[];
+  createdAt: string;
+}> {
   try {
-    const stored = store.get(TAG_CATEGORIES_STORAGE_KEY) as
-      | Array<{
-          id: string;
-          name: string;
-          color: "default" | "red" | "orange" | "yellow" | "green" | "blue" | "purple" | "pink";
-          tags: string[];
-          createdAt: string;
-        }>
-      | undefined;
-    return stored || [];
+    if (existsSync(tagCategoriesPath)) {
+      return JSON.parse(readFileSync(tagCategoriesPath, "utf-8"));
+    }
   } catch {
-    return [];
+    /* corrupted file — start fresh */
   }
-});
+  return [];
+}
 
-ipcMain.handle("save-assets-tag-categories", (_, categories) => {
+function saveAssetsTagCategories(
+  categories: Array<{
+    id: string;
+    name: string;
+    color: "default" | "red" | "orange" | "yellow" | "green" | "blue" | "purple" | "pink";
+    tags: string[];
+    createdAt: string;
+  }>,
+): boolean {
   try {
-    store.set(TAG_CATEGORIES_STORAGE_KEY, categories);
+    if (!existsSync(userDataPath)) mkdirSync(userDataPath, { recursive: true });
+    writeFileSync(tagCategoriesPath, JSON.stringify(categories, null, 2));
     return true;
   } catch {
     return false;
   }
+}
+
+ipcMain.handle("get-assets-tag-categories", () => {
+  return loadAssetsTagCategories();
+});
+
+ipcMain.handle("save-assets-tag-categories", (_, categories) => {
+  return saveAssetsTagCategories(categories);
 });
 
 // SD download path helpers for chunked downloads

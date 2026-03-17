@@ -14,9 +14,34 @@ const METADATA_STORAGE_KEY = "wavespeed_assets_metadata";
 const SETTINGS_STORAGE_KEY = "wavespeed_assets_settings";
 const FOLDERS_STORAGE_KEY = "wavespeed_assets_folders";
 const TAG_CATEGORIES_STORAGE_KEY = "wavespeed_assets_tag_categories";
+const DELETED_ASSETS_KEY = "wavespeed_deleted_assets"; // Track intentionally deleted assets
 
 // Track whether we've subscribed to the IPC event for new assets from workflow executor
 let assetsIpcListenerRegistered = false;
+
+// Helper to generate key for deleted assets registry
+function getDeletedAssetKey(predictionId: string, resultIndex: number): string {
+  return `${predictionId}_${resultIndex}`;
+}
+
+// Helper to remove from deleted registry when user manually re-saves
+async function removeFromDeletedRegistry(
+  deletedAssets: Set<string>,
+  predictionId: string,
+  resultIndex: number,
+): Promise<Set<string>> {
+  const deletedKey = getDeletedAssetKey(predictionId, resultIndex);
+  if (!deletedAssets.has(deletedKey)) return deletedAssets;
+
+  const newDeletedAssets = new Set(deletedAssets);
+  newDeletedAssets.delete(deletedKey);
+
+  // Persist the change
+  const store = useAssetsStore.getState();
+  await store.saveDeletedAssets(newDeletedAssets);
+
+  return newDeletedAssets;
+}
 
 // Helper to generate unique ID
 function generateId(): string {
@@ -166,6 +191,7 @@ function extractModelId(fileName: string): string {
 
 interface AssetsState {
   assets: AssetMetadata[];
+  deletedAssets: Set<string>; // Registry of intentionally deleted {predictionId_resultIndex}
   isLoaded: boolean;
   isLoading: boolean;
   settings: AssetsSettings;
@@ -179,6 +205,8 @@ interface AssetsState {
   loadSettings: () => Promise<void>;
   loadFolders: () => Promise<void>;
   loadTagCategories: () => Promise<void>;
+  loadDeletedAssets: () => Promise<void>;
+  saveDeletedAssets: (deletedAssets: Set<string>) => Promise<void>;
 
   // Asset operations
   saveAsset: (
@@ -247,6 +275,7 @@ interface AssetsState {
 
 export const useAssetsStore = create<AssetsState>((set, get) => ({
   assets: [],
+  deletedAssets: new Set<string>(),
   isLoaded: false,
   isLoading: false,
   settings: {
@@ -331,6 +360,9 @@ export const useAssetsStore = create<AssetsState>((set, get) => ({
         // Load folders and tag categories
         get().loadFolders();
         get().loadTagCategories();
+
+        // Load deleted assets registry
+        get().loadDeletedAssets();
       } else {
         // Browser fallback - limited functionality
         const stored = localStorage.getItem(METADATA_STORAGE_KEY);
@@ -339,6 +371,8 @@ export const useAssetsStore = create<AssetsState>((set, get) => ({
           isLoaded: true,
           isLoading: false,
         });
+        // Load deleted assets in browser too
+        get().loadDeletedAssets();
       }
     } catch (error) {
       console.error("Failed to load assets:", error);
@@ -360,12 +394,35 @@ export const useAssetsStore = create<AssetsState>((set, get) => ({
   },
 
   saveAsset: async (url, type, options) => {
+    const resultIndex = options.resultIndex ?? 0;
+
+    // Check if this asset was intentionally deleted - don't re-save
+    if (options.predictionId !== undefined) {
+      const deletedKey = getDeletedAssetKey(options.predictionId, resultIndex);
+      if (get().deletedAssets.has(deletedKey)) {
+        // User deliberately deleted this, don't auto-save
+        return null;
+      }
+    }
+
+    // Check for duplicate: if asset with same predictionId + resultIndex exists, return it
+    if (options.predictionId !== undefined) {
+      const existing = get().assets.find(
+        (a) =>
+          a.predictionId === options.predictionId &&
+          a.resultIndex === resultIndex,
+      );
+      if (existing) {
+        return existing;
+      }
+    }
+
     const fileName = generateFileName(
       options.modelId,
       type,
       url,
       options.predictionId,
-      options.resultIndex ?? 0,
+      resultIndex,
     );
 
     // Build optional workflow/source fields
@@ -398,9 +455,20 @@ export const useAssetsStore = create<AssetsState>((set, get) => ({
           tags: [],
           favorite: false,
           predictionId: options.predictionId,
+          resultIndex,
           originalUrl: url,
           ...extraFields,
         };
+
+        // Remove from deleted registry if user manually re-saves
+        let newDeletedAssets = get().deletedAssets;
+        if (options.predictionId !== undefined) {
+          newDeletedAssets = await removeFromDeletedRegistry(
+            newDeletedAssets,
+            options.predictionId,
+            resultIndex,
+          );
+        }
 
         set((state) => {
           const newAssets = [metadata, ...state.assets];
@@ -411,7 +479,7 @@ export const useAssetsStore = create<AssetsState>((set, get) => ({
               >[0],
             );
           }
-          return { assets: newAssets };
+          return { assets: newAssets, deletedAssets: newDeletedAssets };
         });
 
         return metadata;
@@ -432,14 +500,25 @@ export const useAssetsStore = create<AssetsState>((set, get) => ({
       tags: [],
       favorite: false,
       predictionId: options.predictionId,
+      resultIndex,
       originalUrl: url,
       ...extraFields,
     };
 
+    // Remove from deleted registry if user manually re-saves
+    let newDeletedAssets = get().deletedAssets;
+    if (options.predictionId !== undefined) {
+      newDeletedAssets = await removeFromDeletedRegistry(
+        newDeletedAssets,
+        options.predictionId,
+        resultIndex,
+      );
+    }
+
     set((state) => {
       const newAssets = [metadata, ...state.assets];
       localStorage.setItem(METADATA_STORAGE_KEY, JSON.stringify(newAssets));
-      return { assets: newAssets };
+      return { assets: newAssets, deletedAssets: newDeletedAssets };
     });
 
     return metadata;
@@ -492,7 +571,7 @@ export const useAssetsStore = create<AssetsState>((set, get) => ({
   },
 
   deleteAsset: async (id) => {
-    const { assets } = get();
+    const { assets, deletedAssets } = get();
     const asset = assets.find((a) => a.id === id);
     if (!asset) return false;
 
@@ -501,6 +580,16 @@ export const useAssetsStore = create<AssetsState>((set, get) => ({
       if (!result.success) {
         console.error("Failed to delete asset file:", result.error);
       }
+    }
+
+    // Add to deleted registry if it has a predictionId (to prevent re-saving during sync)
+    let newDeletedAssets = deletedAssets;
+    if (asset.predictionId !== undefined) {
+      const deletedKey = getDeletedAssetKey(asset.predictionId, asset.resultIndex ?? 0);
+      newDeletedAssets = new Set(deletedAssets);
+      newDeletedAssets.add(deletedKey);
+      // Save deleted registry
+      await get().saveDeletedAssets(newDeletedAssets);
     }
 
     set((state) => {
@@ -514,19 +603,32 @@ export const useAssetsStore = create<AssetsState>((set, get) => ({
       } else {
         localStorage.setItem(METADATA_STORAGE_KEY, JSON.stringify(newAssets));
       }
-      return { assets: newAssets };
+      return { assets: newAssets, deletedAssets: newDeletedAssets };
     });
 
     return true;
   },
 
   deleteAssets: async (ids) => {
-    const { assets } = get();
+    const { assets, deletedAssets } = get();
     const toDelete = assets.filter((a) => ids.includes(a.id));
 
     if (window.electronAPI?.deleteAssetsBulk) {
       const filePaths = toDelete.map((a) => a.filePath);
       await window.electronAPI.deleteAssetsBulk(filePaths);
+    }
+
+    // Add to deleted registry for assets with predictionId
+    let newDeletedAssets = deletedAssets;
+    for (const asset of toDelete) {
+      if (asset.predictionId !== undefined) {
+        if (!newDeletedAssets) newDeletedAssets = new Set(deletedAssets);
+        const deletedKey = getDeletedAssetKey(asset.predictionId, asset.resultIndex ?? 0);
+        newDeletedAssets.add(deletedKey);
+      }
+    }
+    if (newDeletedAssets !== deletedAssets) {
+      await get().saveDeletedAssets(newDeletedAssets);
     }
 
     set((state) => {
@@ -540,7 +642,7 @@ export const useAssetsStore = create<AssetsState>((set, get) => ({
       } else {
         localStorage.setItem(METADATA_STORAGE_KEY, JSON.stringify(newAssets));
       }
-      return { assets: newAssets };
+      return { assets: newAssets, deletedAssets: newDeletedAssets };
     });
 
     return toDelete.length;
@@ -611,8 +713,12 @@ export const useAssetsStore = create<AssetsState>((set, get) => ({
       filtered = filtered.filter((a) => a.favorite);
     }
 
-    // Filter by folder (null = show all including legacy assets without folderId)
-    if (filter.folderId != null) {
+    // Filter by folder
+    // null = show all assets (including legacy without folderId)
+    // "__none__" = show only unassigned assets
+    if (filter.folderId === "__none__") {
+      filtered = filtered.filter((a) => !a.folderId);
+    } else if (filter.folderId != null) {
       filtered = filtered.filter((a) => a.folderId === filter.folderId);
     }
 
@@ -820,6 +926,30 @@ export const useAssetsStore = create<AssetsState>((set, get) => ({
     } else {
       const stored = localStorage.getItem(TAG_CATEGORIES_STORAGE_KEY);
       set({ tagCategories: stored ? JSON.parse(stored) : [] });
+    }
+  },
+
+  loadDeletedAssets: async () => {
+    try {
+      let deleted: string[] = [];
+      if (window.electronAPI?.getDeletedAssets) {
+        deleted = await window.electronAPI.getDeletedAssets();
+      } else {
+        const stored = localStorage.getItem(DELETED_ASSETS_KEY);
+        deleted = stored ? JSON.parse(stored) : [];
+      }
+      set({ deletedAssets: new Set(deleted) });
+    } catch {
+      set({ deletedAssets: new Set() });
+    }
+  },
+
+  saveDeletedAssets: async (deletedAssets: Set<string>) => {
+    const deletedArray = Array.from(deletedAssets);
+    if (window.electronAPI?.saveDeletedAssets) {
+      await window.electronAPI.saveDeletedAssets(deletedArray);
+    } else {
+      localStorage.setItem(DELETED_ASSETS_KEY, JSON.stringify(deletedArray));
     }
   },
 

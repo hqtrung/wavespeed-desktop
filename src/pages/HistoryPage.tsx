@@ -8,6 +8,7 @@ import { useApiKeyStore } from "@/stores/apiKeyStore";
 import { usePlaygroundStore } from "@/stores/playgroundStore";
 import { useModelsStore } from "@/stores/modelsStore";
 import { usePredictionInputsStore } from "@/stores/predictionInputsStore";
+import { useAssetsStore, detectAssetType } from "@/stores/assetsStore";
 import { usePageActive } from "@/hooks/usePageActive";
 import { useDeferredClose } from "@/hooks/useDeferredClose";
 import { normalizeApiInputsToFormValues } from "@/lib/schemaToForm";
@@ -76,6 +77,7 @@ import {
   WifiOff,
   CloudDownload,
   Info,
+  FolderHeart,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AudioPlayer } from "@/components/shared/AudioPlayer";
@@ -227,12 +229,16 @@ const HistoryCard = memo(function HistoryCard({
   const shouldLoad = loadPreviews && isInView;
 
   // Load cached item to get inputs (for prompt display)
-  const [cachedInputs, setCachedInputs] = useState<Record<string, unknown> | null>(null);
+  const [cachedInputs, setCachedInputs] = useState<Record<
+    string,
+    unknown
+  > | null>(null);
 
   useEffect(() => {
     if (isInView && !cachedInputs) {
       console.log("[HistoryCard] Loading cached inputs for:", item.id);
-      historyCacheIpc.get(item.id)
+      historyCacheIpc
+        .get(item.id)
         .then((cached) => {
           console.log("[HistoryCard] Got cached item:", cached);
           if (cached?.inputs) {
@@ -253,11 +259,18 @@ const HistoryCard = memo(function HistoryCard({
     if (!cachedInputs) return null;
 
     // Common prompt field names
-    const promptFieldNames = ['prompt', 'text', 'input', 'caption', 'description', 'instruction'];
+    const promptFieldNames = [
+      "prompt",
+      "text",
+      "input",
+      "caption",
+      "description",
+      "instruction",
+    ];
 
     for (const fieldName of promptFieldNames) {
       const value = cachedInputs[fieldName];
-      if (typeof value === 'string' && value.trim()) {
+      if (typeof value === "string" && value.trim()) {
         return value.trim();
       }
     }
@@ -463,7 +476,7 @@ export function HistoryPage() {
     hasAttemptedLoad,
   } = useApiKeyStore();
   const { createTab, findFormValuesByPredictionId } = usePlaygroundStore();
-  const { getModelById } = useModelsStore();
+  const { fetchModels, getModelById } = useModelsStore();
   const {
     get: getLocalInputs,
     load: loadPredictionInputs,
@@ -487,16 +500,26 @@ export function HistoryPage() {
   const [isOpeningPlayground, setIsOpeningPlayground] = useState(false);
 
   // Cached inputs for selected item (detail panel)
-  const [selectedItemInputs, setSelectedItemInputs] = useState<Record<string, unknown> | null>(null);
+  const [selectedItemInputs, setSelectedItemInputs] = useState<Record<
+    string,
+    unknown
+  > | null>(null);
   const [copiedPrompt, setCopiedPrompt] = useState(false);
 
   // Extract prompt from cached inputs
   const detailPrompt = useMemo(() => {
     if (!selectedItemInputs) return null;
-    const promptFieldNames = ['prompt', 'text', 'input', 'caption', 'description', 'instruction'];
+    const promptFieldNames = [
+      "prompt",
+      "text",
+      "input",
+      "caption",
+      "description",
+      "instruction",
+    ];
     for (const fieldName of promptFieldNames) {
       const value = selectedItemInputs[fieldName];
-      if (typeof value === 'string' && value.trim()) {
+      if (typeof value === "string" && value.trim()) {
         return value.trim();
       }
     }
@@ -507,24 +530,36 @@ export function HistoryPage() {
   const detailInputImages = useMemo(() => {
     if (!selectedItemInputs) return [];
     const imageFieldNames = [
-      'image', 'image_url', 'input_image', 'input_image_url',
-      'source_image', 'source_image_url', 'init_image', 'init_image_url',
-      'control_image', 'control_image_url'
+      "image",
+      "image_url",
+      "input_image",
+      "input_image_url",
+      "source_image",
+      "source_image_url",
+      "init_image",
+      "init_image_url",
+      "control_image",
+      "control_image_url",
     ];
     const images: string[] = [];
     for (const fieldName of imageFieldNames) {
       const value = selectedItemInputs[fieldName];
-      if (typeof value === 'string' && value.trim()) {
+      if (typeof value === "string" && value.trim()) {
         images.push(value.trim());
       }
     }
     // Also check array fields
-    const arrayFieldNames = ['images', 'image_urls', 'input_images', 'input_image_urls'];
+    const arrayFieldNames = [
+      "images",
+      "image_urls",
+      "input_images",
+      "input_image_urls",
+    ];
     for (const fieldName of arrayFieldNames) {
       const value = selectedItemInputs[fieldName];
       if (Array.isArray(value)) {
         for (const item of value) {
-          if (typeof item === 'string' && item.trim()) {
+          if (typeof item === "string" && item.trim()) {
             images.push(item.trim());
           }
         }
@@ -552,6 +587,18 @@ export function HistoryPage() {
   const [localStorageSyncStatus, setLocalStorageSyncStatus] = useState<
     "idle" | "syncing" | "success" | "error"
   >("idle");
+
+  // Asset sync state
+  const [assetSyncStatus, setAssetSyncStatus] = useState<
+    "idle" | "syncing" | "success" | "error"
+  >("idle");
+  const [assetSyncProgress, setAssetSyncProgress] = useState({
+    current: 0,
+    total: 0,
+  });
+
+  // Assets store
+  const { hasAssetForPrediction, saveAsset } = useAssetsStore();
 
   const pageSize = 50;
 
@@ -781,7 +828,9 @@ export function HistoryPage() {
         setSyncStatus("offline");
         setOfflineReason("api-error");
       } else {
-        setError(err instanceof Error ? err.message : "Failed to fetch history");
+        setError(
+          err instanceof Error ? err.message : "Failed to fetch history",
+        );
         setSyncStatus("error");
       }
     } finally {
@@ -863,7 +912,9 @@ export function HistoryPage() {
       if (result.success) {
         setLocalStorageSyncStatus("success");
         toast({
-          title: t("history.syncFromLocalStorageSuccess", { count: result.count }),
+          title: t("history.syncFromLocalStorageSuccess", {
+            count: result.count,
+          }),
           variant: "default",
         });
         // Refresh the history list
@@ -885,6 +936,107 @@ export function HistoryPage() {
       });
     }
   }, [t, fetchHistory]);
+
+  // Helper to extract all media URLs from outputs
+  const extractMediaUrls = useCallback(
+    (outputs?: (string | Record<string, unknown>)[]): string[] => {
+      if (!outputs) return [];
+      const urls: string[] = [];
+      for (const output of outputs) {
+        if (typeof output === "string") {
+          urls.push(output);
+        } else if (typeof output === "object" && output !== null) {
+          // Handle nested output structures (e.g., z-image format)
+          for (const value of Object.values(output)) {
+            if (
+              typeof value === "string" &&
+              (value.startsWith("http://") || value.startsWith("https://"))
+            ) {
+              urls.push(value);
+            }
+          }
+        }
+      }
+      return urls;
+    },
+    [],
+  );
+
+  const handleSyncAssets = useCallback(async () => {
+    setAssetSyncStatus("syncing");
+    let savedCount = 0;
+    let errorCount = 0;
+
+    try {
+      // Fetch ALL items from history cache (not just current page)
+      const allCachedItems = await historyCacheIpc.list({ limit: 10000 });
+
+      // Collect all items that have media outputs and aren't saved to assets yet
+      const unsavedItems: Array<{ item: HistoryItem; urls: string[] }> = [];
+
+      for (const item of allCachedItems) {
+        if (item.status !== "completed") continue;
+
+        // Skip if already has asset
+        if (hasAssetForPrediction(item.id)) continue;
+
+        // Extract media URLs
+        const urls = extractMediaUrls(item.outputs);
+        const mediaUrls = urls.filter((url) => detectAssetType(url) !== null);
+
+        if (mediaUrls.length > 0) {
+          unsavedItems.push({ item, urls: mediaUrls });
+        }
+      }
+
+      setAssetSyncProgress({ current: 0, total: unsavedItems.length });
+
+      // Save assets
+      for (const { item, urls } of unsavedItems) {
+        for (const url of urls) {
+          try {
+            const assetType = detectAssetType(url);
+            if (!assetType) continue;
+
+            await saveAsset(url, assetType, {
+              modelId: item.model,
+              predictionId: item.id,
+              originalUrl: url,
+            });
+
+            savedCount++;
+          } catch {
+            errorCount++;
+          }
+        }
+
+        setAssetSyncProgress((prev) => ({
+          current: prev.current + 1,
+          total: prev.total,
+        }));
+      }
+
+      setAssetSyncStatus("success");
+      toast({
+        title: t("history.syncAssetsSuccess", { count: savedCount }),
+        description:
+          errorCount > 0
+            ? t("history.syncAssetsPartialError", { count: errorCount })
+            : undefined,
+        variant: errorCount > 0 ? "default" : "default",
+      });
+
+      // Reset progress after delay
+      setTimeout(() => setAssetSyncProgress({ current: 0, total: 0 }), 2000);
+    } catch (err) {
+      setAssetSyncStatus("error");
+      toast({
+        title: t("history.syncAssetsError"),
+        description: err instanceof Error ? err.message : t("common.error"),
+        variant: "destructive",
+      });
+    }
+  }, [items, hasAssetForPrediction, extractMediaUrls, saveAsset, t]);
 
   const handleToggleSelect = useCallback((id: string) => {
     setSelectedIds((prev) => {
@@ -922,6 +1074,11 @@ export function HistoryPage() {
     if (!inputsLoaded) loadPredictionInputs();
   }, [loadApiKey, inputsLoaded, loadPredictionInputs]);
 
+  // Fetch models to ensure "Open in Playground" works
+  useEffect(() => {
+    fetchModels();
+  }, [fetchModels]);
+
   // Only fetch when deps change; skip if data is fresh (< 30s old)
   const lastFetchTimeRef = useRef(0);
   useEffect(() => {
@@ -942,12 +1099,19 @@ export function HistoryPage() {
       return;
     }
 
-    console.log("[HistoryPage] Loading inputs for selected item:", deferredSelectedItem.id);
-    historyCacheIpc.get(deferredSelectedItem.id)
+    console.log(
+      "[HistoryPage] Loading inputs for selected item:",
+      deferredSelectedItem.id,
+    );
+    historyCacheIpc
+      .get(deferredSelectedItem.id)
       .then((cached) => {
         console.log("[HistoryPage] Got cached item for detail panel:", cached);
         if (cached?.inputs) {
-          console.log("[HistoryPage] Setting detail panel inputs:", cached.inputs);
+          console.log(
+            "[HistoryPage] Setting detail panel inputs:",
+            cached.inputs,
+          );
           setSelectedItemInputs(cached.inputs);
         } else {
           console.log("[HistoryPage] No inputs in cached item");
@@ -1004,9 +1168,9 @@ export function HistoryPage() {
     }
   }, [isValidated, offlineReason]);
 
-  // Load initial sync stats
+  // Load initial sync stats and trigger resync if needed
   useEffect(() => {
-    const loadStats = async () => {
+    const loadStatsAndMaybeResync = async () => {
       try {
         const stats = await historyCacheIpc.stats();
         if (stats.lastSyncTime) {
@@ -1015,11 +1179,24 @@ export function HistoryPage() {
             setSyncStatus("synced");
           }
         }
+
+        // Auto-trigger resync if there are cached items but we want to ensure input_details are populated
+        // This is a one-time operation after the fix for preserving input_details
+        const resyncKey = "history-resync-v2";
+        const hasResynced = localStorage.getItem(resyncKey);
+        if (!hasResynced && stats.totalCount > 0) {
+          console.log("[History] Triggering one-time resync to populate input_details...");
+          localStorage.setItem(resyncKey, "true");
+          // Trigger resync after a short delay
+          setTimeout(() => {
+            handleSyncFromLocalStorage();
+          }, 1000);
+        }
       } catch {
         // Ignore stats errors
       }
     };
-    loadStats();
+    loadStatsAndMaybeResync();
   }, []);
 
   // Initialize background sync service
@@ -1213,6 +1390,32 @@ export function HistoryPage() {
             {t("history.syncFromLocalStorage")}
           </Button>
 
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleSyncAssets}
+            disabled={assetSyncStatus === "syncing" || isOffline}
+            title={
+              isOffline
+                ? t("history.offlineRefreshDisabled")
+                : t("history.syncAssetsTooltip")
+            }
+            className="relative"
+          >
+            {assetSyncStatus === "syncing" ? (
+              <>
+                <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                {assetSyncProgress.total > 0 &&
+                  `(${assetSyncProgress.current}/${assetSyncProgress.total})`}
+              </>
+            ) : (
+              <>
+                <FolderHeart className="mr-2 h-4 w-4" />
+                {t("history.syncAssets")}
+              </>
+            )}
+          </Button>
+
           {/* Sync Status Badge */}
           {(() => {
             // Combine cache sync status + background sync status
@@ -1243,10 +1446,12 @@ export function HistoryPage() {
               return (
                 <Badge variant="secondary" className="h-9 gap-1.5 text-xs">
                   <WifiOff className="h-3 w-3" />
-                  {offlineReason === "no-api-key" && t("history.offlineNoApiKey")}
+                  {offlineReason === "no-api-key" &&
+                    t("history.offlineNoApiKey")}
                   {offlineReason === "network-offline" &&
                     t("history.offlineNetwork")}
-                  {offlineReason === "api-error" && t("history.offlineApiError")}
+                  {offlineReason === "api-error" &&
+                    t("history.offlineApiError")}
                   {!offlineReason &&
                     lastSyncTime &&
                     t("history.lastSyncedAt", {
@@ -1382,21 +1587,21 @@ export function HistoryPage() {
 
               <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                 {items.map((item, index) => (
-                <HistoryCard
-                  key={item.id}
-                  item={item}
-                  index={index}
-                  loadPreviews={loadPreviews}
-                  isSelectionMode={isSelectionMode}
-                  isSelected={selectedIds.has(item.id)}
-                  onToggleSelect={handleToggleSelect}
-                  onSelect={setSelectedItem}
-                  onCustomize={handleOpenInPlayground}
-                  onDelete={setDeleteConfirmItem}
-                />
-              ))}
-            </div>
-          </>
+                  <HistoryCard
+                    key={item.id}
+                    item={item}
+                    index={index}
+                    loadPreviews={loadPreviews}
+                    isSelectionMode={isSelectionMode}
+                    isSelected={selectedIds.has(item.id)}
+                    onToggleSelect={handleToggleSelect}
+                    onSelect={setSelectedItem}
+                    onCustomize={handleOpenInPlayground}
+                    onDelete={setDeleteConfirmItem}
+                  />
+                ))}
+              </div>
+            </>
           )}
         </div>
       </ScrollArea>
@@ -1511,6 +1716,14 @@ export function HistoryPage() {
                 </>
               )}
               <div className="flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => navigate(`/assets?predictionId=${deferredSelectedItem.id}`)}
+                >
+                  <FolderHeart className="h-4 w-4 mr-2" />
+                  {t("history.viewInAssets", "View in Assets")}
+                </Button>
                 <Button
                   variant="default"
                   size="sm"
@@ -1634,7 +1847,7 @@ export function HistoryPage() {
                               const windowRef = window.open();
                               if (windowRef) {
                                 windowRef.document.write(
-                                  `<img src="${imageUrl}" style="max-width: 100%; height: auto;" />`
+                                  `<img src="${imageUrl}" style="max-width: 100%; height: auto;" />`,
                                 );
                               }
                             }}

@@ -415,6 +415,12 @@ const electronAPI = {
     return () => ipcRenderer.removeListener("assets:new-asset", handler);
   },
 
+  // Deleted assets registry (prevents re-syncing intentionally deleted assets)
+  getDeletedAssets: (): Promise<string[]> =>
+    ipcRenderer.invoke("get-deleted-assets"),
+  saveDeletedAssets: (deletedAssets: string[]): Promise<void> =>
+    ipcRenderer.invoke("save-deleted-assets", deletedAssets),
+
   // History cache APIs
   historyCacheList: (
     options: { limit?: number; offset?: number; status?: string },

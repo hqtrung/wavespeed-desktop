@@ -75,6 +75,8 @@ export const historyCacheIpc = {
       historyItems.map(async (item) => {
         try {
           const details = await apiClient.getPredictionDetails(item.id);
+          console.log(`[History IPC] Details for ${item.id}:`, details);
+          console.log(`[History IPC] Input field:`, details.input);
           return { id: item.id, input: details.input };
         } catch (err) {
           console.error(`[History IPC] Failed to fetch details for ${item.id}:`, err);
@@ -82,6 +84,9 @@ export const historyCacheIpc = {
         }
       }),
     );
+
+    console.log(`[History IPC] Fetched ${detailItems.length} detail items`);
+    console.log(`[History IPC] Items with input: ${detailItems.filter(d => d.input).length}`);
 
     // Pass data to main process for downloading and caching
     return invoke("syncWithImages", { historyItems, detailItems });

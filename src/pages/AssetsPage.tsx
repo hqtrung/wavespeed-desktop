@@ -810,7 +810,7 @@ export function AssetsPage() {
   }
 
   return (
-    <div className="flex h-full pt-12 md:pt-0">
+    <div className="flex h-full pt-12 md:pt-0 overflow-hidden">
       {/* Folder Sidebar */}
       {!isCollapsed && (
         <div style={{ width: `${sidebarWidth}px`, minWidth: `${MIN_SIDEBAR_WIDTH}px`, maxWidth: `${MAX_SIDEBAR_WIDTH}px` }} className="flex-shrink-0 relative">
@@ -835,6 +835,8 @@ export function AssetsPage() {
             onFolderDelete={handleFolderDelete}
             onAssetsMove={handleAssetsMove}
             getAssetCount={handleGetFolderAssetCount}
+            width="w-full"
+            isCollapsed={false}
           />
         </div>
       )}
@@ -851,16 +853,15 @@ export function AssetsPage() {
       ) : (
         <div
           className={cn(
-            "w-1 bg-border/50 hover:bg-primary/50 cursor-col-resize flex-shrink-0 transition-colors relative z-50",
-            isResizing && "bg-primary cursor-col-resizing",
+            "w-1 bg-border/50 hover:bg-primary/50 cursor-col-resize flex-shrink-0 transition-colors relative z-10 select-none",
+            isResizing && "bg-primary",
           )}
-          style={{ cursor: isResizing ? "col-resize" : "col-resize" }}
           onMouseDown={handleResizeStart}
         />
       )}
 
       {/* Main content */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
       {/* Header */}
       <div className="page-header px-4 md:px-6 py-4 border-b border-border/70 animate-in fade-in slide-in-from-bottom-2 duration-300 fill-mode-both">
         <div className="flex flex-col gap-1.5 md:flex-row md:items-baseline md:gap-3 mb-4">

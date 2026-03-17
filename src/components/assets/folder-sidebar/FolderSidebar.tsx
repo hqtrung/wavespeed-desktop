@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { Plus, ChevronRight, ChevronLeft, Folder, FolderOpen, Search, X } from "lucide-react";
+import { Plus, Folder, FolderOpen, Search, X } from "lucide-react";
 import type { AssetFolder } from "@/types/asset";
 import { NO_FOLDER_ID } from "@/types/asset";
 import { FolderItem } from "./FolderItem";
@@ -18,6 +18,10 @@ interface FolderSidebarProps {
   onFolderDelete: (folder: AssetFolder) => void;
   onAssetsMove: (assetIds: string[], folderId: string | null) => void;
   getAssetCount: (folderId: string | null) => number;
+  // Optional width for resizable panel
+  width?: string;
+  // Collapsed state (controlled by parent)
+  isCollapsed?: boolean;
 }
 
 export function FolderSidebar({
@@ -29,9 +33,10 @@ export function FolderSidebar({
   onFolderDelete,
   onAssetsMove,
   getAssetCount,
+  width,
+  isCollapsed = false,
 }: FolderSidebarProps) {
   const { t } = useTranslation();
-  const [isCollapsed, setIsCollapsed] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
   // Memoize folder counts to avoid recalculation on every render
@@ -59,31 +64,17 @@ export function FolderSidebar({
     <div
       className={cn(
         "flex flex-col border-r border-border/70 bg-muted/30",
-        isCollapsed ? "w-12" : "w-56",
+        isCollapsed ? "w-12" : width || "w-56",
       )}
     >
       {/* Header */}
       <div className="flex flex-col gap-2 px-3 py-3 border-b border-border/70">
-        <div className="flex items-center justify-between">
-          {!isCollapsed && (
-            <h2 className="text-sm font-semibold flex items-center gap-2">
-              <Folder className="h-4 w-4 text-muted-foreground" />
-              {t("assets.folders.title", "Folders")}
-            </h2>
-          )}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 shrink-0"
-            onClick={() => setIsCollapsed(!isCollapsed)}
-          >
-            {isCollapsed ? (
-              <ChevronRight className="h-4 w-4" />
-            ) : (
-              <ChevronLeft className="h-4 w-4" />
-            )}
-          </Button>
-        </div>
+        {!isCollapsed && (
+          <h2 className="text-sm font-semibold flex items-center gap-2">
+            <Folder className="h-4 w-4 text-muted-foreground" />
+            {t("assets.folders.title", "Folders")}
+          </h2>
+        )}
 
         {/* Search input */}
         {!isCollapsed && (
@@ -108,8 +99,8 @@ export function FolderSidebar({
       </div>
 
       {/* Folder list */}
-      <ScrollArea className="flex-1">
-        <div className="p-2 space-y-1">
+      <ScrollArea className="flex-1 w-full">
+        <div className="p-2 space-y-1 w-full">
           {/* All Assets */}
           <FolderItem
             folder={null}

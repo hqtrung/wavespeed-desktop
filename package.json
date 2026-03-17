@@ -115,7 +115,7 @@
   },
   "build": {
     "appId": "com.wavespeed.desktop",
-    "productName": "WaveSpeed Desktop",
+    "productName": "My AI Playground",
     "artifactName": "WaveSpeed-Desktop-${os}-${arch}.${ext}",
     "directories": {
       "buildResources": "build",

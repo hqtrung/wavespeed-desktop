@@ -189,6 +189,42 @@ function extractModelId(fileName: string): string {
   return "unknown";
 }
 
+// Extract prediction ID from filename
+// Format: "{model-slug}_{predictionId}_{resultIndex}.{ext}"
+// Returns prediction ID (32 hex chars, no dashes) or null
+function extractPredictionId(fileName: string): string | null {
+  const nameWithoutExt = fileName.replace(/\.[^.]+$/, "");
+  const parts = nameWithoutExt.split("_");
+
+  // Need at least 3 parts: model (1+), predictionId, resultIndex
+  if (parts.length >= 3) {
+    // Second to last part should be the prediction ID
+    const predictionPart = parts[parts.length - 2];
+
+    // Remove any dashes and check if it's 32 hex chars
+    const cleanPart = predictionPart.replace(/-/g, "");
+    if (cleanPart.length === 32 && /^[a-f0-9]+$/.test(cleanPart)) {
+      return cleanPart; // Return without dashes (matching API format)
+    }
+  }
+  return null;
+}
+
+// Extract result index from filename
+function extractResultIndex(fileName: string): number {
+  const nameWithoutExt = fileName.replace(/\.[^.]+$/, "");
+  const parts = nameWithoutExt.split("_");
+
+  if (parts.length >= 3) {
+    const lastPart = parts[parts.length - 1];
+    const index = parseInt(lastPart, 10);
+    if (!isNaN(index)) {
+      return index;
+    }
+  }
+  return 0;
+}
+
 interface AssetsState {
   assets: AssetMetadata[];
   deletedAssets: Set<string>; // Registry of intentionally deleted {predictionId_resultIndex}
@@ -248,6 +284,13 @@ interface AssetsState {
     assetIds: string[],
     folderId: string | null,
   ) => Promise<void>;
+  exportFolder: (
+    folderId: string,
+  ) => Promise<
+    | { success: true; exportPath: string; copied: number; total: number; errors?: string[] }
+    | { success: false; canceled: true }
+    | { success: false; error: string }
+  >;
 
   // Tag category operations
   createTagCategory: (
@@ -305,75 +348,70 @@ export const useAssetsStore = create<AssetsState>((set, get) => ({
     }
 
     try {
-      if (window.electronAPI?.scanAssetsDirectory) {
-        // Scan actual files on disk (async, non-blocking)
-        const [files, existingMetadata] = await Promise.all([
-          window.electronAPI.scanAssetsDirectory(),
-          window.electronAPI.getAssetsMetadata?.() || Promise.resolve([]),
-        ]);
+      if (window.electronAPI?.assetsGetFiltered) {
+        try {
+          // Load from database using cursor-based pagination (load all without hardcoded limit)
+          const allAssets: AssetMetadata[] = [];
+          let cursor: string | null = null;
+          let totalLoaded = 0;
+          const maxIterations = 1000; // Safety limit: 1000 * 500 = 500k max assets
+          const seenCursors = new Set<string>();
 
-        // Process in next tick to avoid blocking UI
-        await new Promise((resolve) => setTimeout(resolve, 0));
+          for (let i = 0; i < maxIterations; i++) {
+            const result = await window.electronAPI.assetsGetFiltered({
+              cursor: cursor || undefined,
+              limit: 500, // Reasonable chunk size for performance
+            });
 
-        const metadataByPath = new Map(
-          existingMetadata.map((m) => [m.filePath, m]),
-        );
+            allAssets.push(...result.items);
+            totalLoaded += result.items.length;
 
-        // Build asset list from actual files, enriching with metadata if available
-        const assets: AssetMetadata[] = files.map((file) => {
-          const existing = metadataByPath.get(file.filePath);
-          if (existing) {
-            // Use existing metadata but update file size (in case it changed)
-            return { ...existing, fileSize: file.fileSize };
+            const newCursor = result.nextCursor;
+
+            // Stop if no more results
+            if (!newCursor) break;
+
+            // Detect circular cursor (bug)
+            if (seenCursors.has(newCursor)) {
+              console.error("[Assets] Circular cursor detected, stopping pagination");
+              break;
+            }
+            seenCursors.add(newCursor);
+            cursor = newCursor;
           }
-          // Create new metadata from file info
-          return {
-            id: generateId(),
-            filePath: file.filePath,
-            fileName: file.fileName,
-            type: file.type,
-            modelId: extractModelId(file.fileName),
-            createdAt: file.createdAt,
-            fileSize: file.fileSize,
-            tags: [],
-            favorite: false,
-          };
-        });
 
-        // Sort by creation date (newest first)
-        assets.sort(
-          (a, b) =>
-            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-        );
+          if (totalLoaded >= maxIterations * 500) {
+            console.warn("[Assets] Reached pagination safety limit, some assets may not be loaded");
+          }
 
-        set({ assets, isLoaded: true, isLoading: false });
+          set({
+            assets: allAssets,
+            isLoaded: true,
+            isLoading: false,
+          });
 
-        // Save merged metadata in background (don't await)
-        if (window.electronAPI?.saveAssetsMetadata) {
-          window.electronAPI.saveAssetsMetadata(
-            assets as Parameters<
-              typeof window.electronAPI.saveAssetsMetadata
-            >[0],
-          );
+          // Load folders and tag categories
+          get().loadFolders();
+          get().loadTagCategories();
+
+          // Load deleted assets registry (legacy compatibility - can be phased out)
+          get().loadDeletedAssets();
+          return;
+        } catch (ipcError) {
+          // IPC handler not registered - fall back to JSON storage
+          console.warn("[Assets] Database IPC not available, falling back to JSON:", ipcError);
         }
-
-        // Load folders and tag categories
-        get().loadFolders();
-        get().loadTagCategories();
-
-        // Load deleted assets registry
-        get().loadDeletedAssets();
-      } else {
-        // Browser fallback - limited functionality
-        const stored = localStorage.getItem(METADATA_STORAGE_KEY);
-        set({
-          assets: stored ? JSON.parse(stored) : [],
-          isLoaded: true,
-          isLoading: false,
-        });
-        // Load deleted assets in browser too
-        get().loadDeletedAssets();
       }
+
+      // Fallback: Browser/JSON mode - limited functionality
+      const stored = localStorage.getItem(METADATA_STORAGE_KEY);
+      set({
+        assets: stored ? JSON.parse(stored) : [],
+        isLoaded: true,
+        isLoading: false,
+      });
+      // Load deleted assets in fallback mode
+      get().loadDeletedAssets();
     } catch (error) {
       console.error("Failed to load assets:", error);
       set({ isLoaded: true, isLoading: false });
@@ -470,8 +508,22 @@ export const useAssetsStore = create<AssetsState>((set, get) => ({
           );
         }
 
-        set((state) => {
-          const newAssets = [metadata, ...state.assets];
+        // IMPORTANT: Load latest metadata from disk to avoid race conditions
+        // when multiple assets are saved simultaneously
+        let currentAssets = get().assets;
+        if (window.electronAPI?.getAssetsMetadata) {
+          try {
+            const diskMetadata = await window.electronAPI.getAssetsMetadata();
+            if (diskMetadata && diskMetadata.length > 0) {
+              currentAssets = diskMetadata;
+            }
+          } catch (e) {
+            console.warn("Failed to load latest metadata from disk:", e);
+          }
+        }
+
+        set(() => {
+          const newAssets = [metadata, ...currentAssets];
           if (window.electronAPI?.saveAssetsMetadata) {
             window.electronAPI.saveAssetsMetadata(
               newAssets as Parameters<
@@ -515,8 +567,22 @@ export const useAssetsStore = create<AssetsState>((set, get) => ({
       );
     }
 
-    set((state) => {
-      const newAssets = [metadata, ...state.assets];
+    // Load latest from localStorage to avoid race conditions
+    let currentAssets = get().assets;
+    try {
+      const stored = localStorage.getItem(METADATA_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored) as AssetMetadata[];
+        if (parsed.length > currentAssets.length) {
+          currentAssets = parsed;
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to load latest metadata from localStorage:", e);
+    }
+
+    set(() => {
+      const newAssets = [metadata, ...currentAssets];
       localStorage.setItem(METADATA_STORAGE_KEY, JSON.stringify(newAssets));
       return { assets: newAssets, deletedAssets: newDeletedAssets };
     });
@@ -575,13 +641,36 @@ export const useAssetsStore = create<AssetsState>((set, get) => ({
     const asset = assets.find((a) => a.id === id);
     if (!asset) return false;
 
+    // Try to delete the file first
     if (window.electronAPI?.deleteAsset) {
       const result = await window.electronAPI.deleteAsset(asset.filePath);
       if (!result.success) {
-        console.error("Failed to delete asset file:", result.error);
+        throw new Error(`Failed to delete asset file: ${result.error}`);
       }
     }
 
+    // Delete from database
+    if (window.electronAPI?.assetsDelete) {
+      await window.electronAPI.assetsDelete(id);
+
+      // Add to deleted registry to prevent re-syncing the same asset
+      let newDeletedAssets = deletedAssets;
+      if (asset.predictionId !== undefined) {
+        const deletedKey = getDeletedAssetKey(asset.predictionId, asset.resultIndex ?? 0);
+        newDeletedAssets = new Set(deletedAssets);
+        newDeletedAssets.add(deletedKey);
+        await get().saveDeletedAssets(newDeletedAssets);
+      }
+
+      // Update local state
+      set((state) => {
+        const newAssets = state.assets.filter((a) => a.id !== id);
+        return { assets: newAssets, deletedAssets: newDeletedAssets };
+      });
+      return true;
+    }
+
+    // Fallback to old behavior
     // Add to deleted registry if it has a predictionId (to prevent re-saving during sync)
     let newDeletedAssets = deletedAssets;
     if (asset.predictionId !== undefined) {
@@ -610,15 +699,44 @@ export const useAssetsStore = create<AssetsState>((set, get) => ({
   },
 
   deleteAssets: async (ids) => {
-    const { assets, deletedAssets } = get();
+    const { assets } = get();
     const toDelete = assets.filter((a) => ids.includes(a.id));
 
+    // Delete files first - if this fails, don't remove metadata
     if (window.electronAPI?.deleteAssetsBulk) {
       const filePaths = toDelete.map((a) => a.filePath);
-      await window.electronAPI.deleteAssetsBulk(filePaths);
+      const result = await window.electronAPI.deleteAssetsBulk(filePaths);
+      if (!result.success) {
+        throw new Error(`Failed to delete some asset files`);
+      }
     }
 
-    // Add to deleted registry for assets with predictionId
+    // Delete from database
+    if (window.electronAPI?.assetsDeleteMany) {
+      await window.electronAPI.assetsDeleteMany(ids);
+
+      // Track deleted assets to prevent re-sync
+      const { deletedAssets } = get();
+      let newDeletedAssets = deletedAssets;
+      for (const asset of toDelete) {
+        if (asset.predictionId !== undefined) {
+          const deletedKey = getDeletedAssetKey(asset.predictionId, asset.resultIndex ?? 0);
+          if (!newDeletedAssets) newDeletedAssets = new Set(deletedAssets);
+          newDeletedAssets.add(deletedKey);
+        }
+      }
+      await get().saveDeletedAssets(newDeletedAssets);
+
+      // Update local state
+      set((state) => {
+        const newAssets = state.assets.filter((a) => !ids.includes(a.id));
+        return { assets: newAssets, deletedAssets: newDeletedAssets };
+      });
+      return toDelete.length;
+    }
+
+    // Fallback to old behavior
+    const { deletedAssets } = get();
     let newDeletedAssets = deletedAssets;
     for (const asset of toDelete) {
       if (asset.predictionId !== undefined) {
@@ -649,21 +767,26 @@ export const useAssetsStore = create<AssetsState>((set, get) => ({
   },
 
   updateAsset: async (id, updates) => {
-    set((state) => {
-      const newAssets = state.assets.map((a) =>
-        a.id === id ? { ...a, ...updates } : a,
-      );
-      if (window.electronAPI?.saveAssetsMetadata) {
-        window.electronAPI.saveAssetsMetadata(
-          newAssets as Parameters<
-            typeof window.electronAPI.saveAssetsMetadata
-          >[0],
-        );
-      } else {
-        localStorage.setItem(METADATA_STORAGE_KEY, JSON.stringify(newAssets));
+    if (window.electronAPI?.assetsUpdate) {
+      await window.electronAPI.assetsUpdate(id, updates);
+      // Reload from database to ensure consistency
+      const updated = await window.electronAPI.assetsGetById(id);
+      if (updated) {
+        set((state) => {
+          const newAssets = state.assets.map((a) => (a.id === id ? updated : a));
+          return { assets: newAssets };
+        });
       }
-      return { assets: newAssets };
-    });
+    } else {
+      // Browser fallback
+      set((state) => {
+        const newAssets = state.assets.map((a) =>
+          a.id === id ? { ...a, ...updates } : a,
+        );
+        localStorage.setItem(METADATA_STORAGE_KEY, JSON.stringify(newAssets));
+        return { assets: newAssets };
+      });
+    }
   },
 
   getFilteredAssets: (filter) => {
@@ -822,16 +945,34 @@ export const useAssetsStore = create<AssetsState>((set, get) => ({
   // ===== FOLDER OPERATIONS =====
 
   loadFolders: async () => {
-    if (window.electronAPI?.getAssetsFolders) {
-      const folders = await window.electronAPI.getAssetsFolders();
-      set({ folders });
-    } else {
-      const stored = localStorage.getItem(FOLDERS_STORAGE_KEY);
-      set({ folders: stored ? JSON.parse(stored) : [] });
+    if (window.electronAPI?.foldersGetAll) {
+      try {
+        const folders = await window.electronAPI.foldersGetAll();
+        set({ folders });
+        return;
+      } catch (ipcError) {
+        console.warn("[Assets] Folders IPC not available, falling back to JSON:", ipcError);
+      }
     }
+    // Fallback to JSON storage
+    const stored = localStorage.getItem(FOLDERS_STORAGE_KEY);
+    set({ folders: stored ? JSON.parse(stored) : [] });
   },
 
   createFolder: async (name, color) => {
+    if (window.electronAPI?.foldersCreate) {
+      const id = await window.electronAPI.foldersCreate({ name, color });
+      const folder: AssetFolder = {
+        id,
+        name,
+        color,
+        createdAt: new Date().toISOString(),
+      };
+      set((state) => ({ folders: [...state.folders, folder] }));
+      return folder;
+    }
+
+    // Fallback to old behavior
     const folder: AssetFolder = {
       id: generateId(),
       name,
@@ -853,80 +994,165 @@ export const useAssetsStore = create<AssetsState>((set, get) => ({
   },
 
   updateFolder: async (id, updates) => {
-    set((state) => {
-      const newFolders = state.folders.map((f) =>
-        f.id === id ? { ...f, ...updates } : f,
-      );
-      if (window.electronAPI?.saveAssetsFolders) {
-        window.electronAPI.saveAssetsFolders(
-          newFolders as Parameters<typeof window.electronAPI.saveAssetsFolders>[0],
+    if (window.electronAPI?.foldersUpdate) {
+      await window.electronAPI.foldersUpdate(id, updates);
+      set((state) => ({
+        folders: state.folders.map((f) =>
+          f.id === id ? { ...f, ...updates } : f,
+        ),
+      }));
+    } else {
+      // Fallback to old behavior
+      set((state) => {
+        const newFolders = state.folders.map((f) =>
+          f.id === id ? { ...f, ...updates } : f,
         );
-      } else {
-        localStorage.setItem(FOLDERS_STORAGE_KEY, JSON.stringify(newFolders));
-      }
-      return { folders: newFolders };
-    });
+        if (window.electronAPI?.saveAssetsFolders) {
+          window.electronAPI.saveAssetsFolders(
+            newFolders as Parameters<typeof window.electronAPI.saveAssetsFolders>[0],
+          );
+        } else {
+          localStorage.setItem(FOLDERS_STORAGE_KEY, JSON.stringify(newFolders));
+        }
+        return { folders: newFolders };
+      });
+    }
   },
 
   deleteFolder: async (id, moveAssetsTo) => {
-    set((state) => {
-      const newFolders = state.folders.filter((f) => f.id !== id);
-      const newAssets = moveAssetsTo !== undefined
-        ? state.assets.map((a) =>
-            a.folderId === id ? { ...a, folderId: moveAssetsTo } : a,
-          )
-        : state.assets.map((a) =>
-            a.folderId === id ? { ...a, folderId: undefined } : a,
+    if (window.electronAPI?.foldersDelete) {
+      await window.electronAPI.foldersDelete(id, moveAssetsTo);
+      // Reload folders and assets from database to ensure consistency
+      const folders = await window.electronAPI.foldersGetAll();
+      set((state) => {
+        const newAssets = moveAssetsTo !== undefined
+          ? state.assets.map((a) =>
+              a.folderId === id ? { ...a, folderId: moveAssetsTo } : a,
+            )
+          : state.assets.map((a) =>
+              a.folderId === id ? { ...a, folderId: undefined } : a,
+            );
+        return { folders, assets: newAssets };
+      });
+    } else {
+      // Fallback to old behavior
+      set((state) => {
+        const newFolders = state.folders.filter((f) => f.id !== id);
+        const newAssets = moveAssetsTo !== undefined
+          ? state.assets.map((a) =>
+              a.folderId === id ? { ...a, folderId: moveAssetsTo } : a,
+            )
+          : state.assets.map((a) =>
+              a.folderId === id ? { ...a, folderId: undefined } : a,
+            );
+
+        if (window.electronAPI?.saveAssetsFolders) {
+          window.electronAPI.saveAssetsFolders(
+            newFolders as Parameters<typeof window.electronAPI.saveAssetsFolders>[0],
           );
+        } else {
+          localStorage.setItem(FOLDERS_STORAGE_KEY, JSON.stringify(newFolders));
+        }
 
-      if (window.electronAPI?.saveAssetsFolders) {
-        window.electronAPI.saveAssetsFolders(
-          newFolders as Parameters<typeof window.electronAPI.saveAssetsFolders>[0],
-        );
-      } else {
-        localStorage.setItem(FOLDERS_STORAGE_KEY, JSON.stringify(newFolders));
-      }
+        if (window.electronAPI?.saveAssetsMetadata) {
+          window.electronAPI.saveAssetsMetadata(
+            newAssets as Parameters<typeof window.electronAPI.saveAssetsMetadata>[0],
+          );
+        } else {
+          localStorage.setItem(METADATA_STORAGE_KEY, JSON.stringify(newAssets));
+        }
 
-      if (window.electronAPI?.saveAssetsMetadata) {
-        window.electronAPI.saveAssetsMetadata(
-          newAssets as Parameters<typeof window.electronAPI.saveAssetsMetadata>[0],
-        );
-      } else {
-        localStorage.setItem(METADATA_STORAGE_KEY, JSON.stringify(newAssets));
-      }
-
-      return { folders: newFolders, assets: newAssets };
-    });
+        return { folders: newFolders, assets: newAssets };
+      });
+    }
   },
 
   moveAssetsToFolder: async (assetIds, folderId) => {
-    set((state) => {
-      const newAssets = state.assets.map((a) =>
-        assetIds.includes(a.id) ? { ...a, folderId: folderId || undefined } : a,
+    if (window.electronAPI?.assetsUpdate) {
+      // Update each asset individually in the database
+      for (const assetId of assetIds) {
+        await window.electronAPI.assetsUpdate(assetId, { folderId });
+      }
+      // Update local state
+      set((state) => ({
+        assets: state.assets.map((a) =>
+          assetIds.includes(a.id) ? { ...a, folderId: folderId || undefined } : a,
+        ),
+      }));
+    } else {
+      // Fallback to old behavior
+      set((state) => {
+        const newAssets = state.assets.map((a) =>
+          assetIds.includes(a.id) ? { ...a, folderId: folderId || undefined } : a,
+        );
+
+        if (window.electronAPI?.saveAssetsMetadata) {
+          window.electronAPI.saveAssetsMetadata(
+            newAssets as Parameters<typeof window.electronAPI.saveAssetsMetadata>[0],
+          );
+        } else {
+          localStorage.setItem(METADATA_STORAGE_KEY, JSON.stringify(newAssets));
+        }
+
+        return { assets: newAssets };
+      });
+    }
+  },
+
+  exportFolder: async (folderId) => {
+    const { assets, folders } = get();
+    const folder = folders.find((f) => f.id === folderId);
+    if (!folder) {
+      throw new Error("Folder not found");
+    }
+
+    // Get all assets in this folder
+    const folderAssets = assets.filter((a) => a.folderId === folderId);
+    if (folderAssets.length === 0) {
+      throw new Error("No assets in this folder");
+    }
+
+    if (window.electronAPI?.exportAssetsFolder) {
+      const result = await window.electronAPI.exportAssetsFolder(
+        folder.name,
+        folderId,
+        folderAssets.map((a) => a.filePath),
       );
 
-      if (window.electronAPI?.saveAssetsMetadata) {
-        window.electronAPI.saveAssetsMetadata(
-          newAssets as Parameters<typeof window.electronAPI.saveAssetsMetadata>[0],
-        );
-      } else {
-        localStorage.setItem(METADATA_STORAGE_KEY, JSON.stringify(newAssets));
+      if (!result.success) {
+        if ("canceled" in result && (result as { canceled: boolean }).canceled) {
+          return { canceled: true };
+        }
+        throw new Error(result.error || "Export failed");
       }
 
-      return { assets: newAssets };
-    });
+      return {
+        success: true,
+        exportPath: (result as { exportPath?: string }).exportPath,
+        copied: (result as { copied?: number }).copied,
+        total: (result as { total?: number }).total,
+        errors: (result as { errors?: string[] }).errors,
+      };
+    }
+
+    throw new Error("Export not supported in browser mode");
   },
 
   // ===== TAG CATEGORY OPERATIONS =====
 
   loadTagCategories: async () => {
-    if (window.electronAPI?.getAssetsTagCategories) {
-      const tagCategories = await window.electronAPI.getAssetsTagCategories();
-      set({ tagCategories });
-    } else {
-      const stored = localStorage.getItem(TAG_CATEGORIES_STORAGE_KEY);
-      set({ tagCategories: stored ? JSON.parse(stored) : [] });
+    if (window.electronAPI?.tagCategoriesGetAll) {
+      try {
+        const tagCategories = await window.electronAPI.tagCategoriesGetAll();
+        set({ tagCategories });
+        return;
+      } catch (ipcError) {
+        console.warn("[Assets] Tag categories IPC not available, falling back to JSON:", ipcError);
+      }
     }
+    // Fallback to JSON storage
+    const stored = localStorage.getItem(TAG_CATEGORIES_STORAGE_KEY);
+    set({ tagCategories: stored ? JSON.parse(stored) : [] });
   },
 
   loadDeletedAssets: async () => {
@@ -954,6 +1180,20 @@ export const useAssetsStore = create<AssetsState>((set, get) => ({
   },
 
   createTagCategory: async (name, color, tags = []) => {
+    if (window.electronAPI?.tagCategoriesCreate) {
+      const id = await window.electronAPI.tagCategoriesCreate(name, color, tags);
+      const category: TagCategory = {
+        id,
+        name,
+        color,
+        tags,
+        createdAt: new Date().toISOString(),
+      };
+      set((state) => ({ tagCategories: [...state.tagCategories, category] }));
+      return category;
+    }
+
+    // Fallback to old behavior
     const category: TagCategory = {
       id: generateId(),
       name,
@@ -976,33 +1216,51 @@ export const useAssetsStore = create<AssetsState>((set, get) => ({
   },
 
   updateTagCategory: async (id, updates) => {
-    set((state) => {
-      const newCategories = state.tagCategories.map((c) =>
-        c.id === id ? { ...c, ...updates } : c,
-      );
-      if (window.electronAPI?.saveAssetsTagCategories) {
-        window.electronAPI.saveAssetsTagCategories(
-          newCategories as Parameters<typeof window.electronAPI.saveAssetsTagCategories>[0],
+    if (window.electronAPI?.tagCategoriesUpdate) {
+      await window.electronAPI.tagCategoriesUpdate(id, updates);
+      set((state) => ({
+        tagCategories: state.tagCategories.map((c) =>
+          c.id === id ? { ...c, ...updates } : c,
+        ),
+      }));
+    } else {
+      // Fallback to old behavior
+      set((state) => {
+        const newCategories = state.tagCategories.map((c) =>
+          c.id === id ? { ...c, ...updates } : c,
         );
-      } else {
-        localStorage.setItem(TAG_CATEGORIES_STORAGE_KEY, JSON.stringify(newCategories));
-      }
-      return { tagCategories: newCategories };
-    });
+        if (window.electronAPI?.saveAssetsTagCategories) {
+          window.electronAPI.saveAssetsTagCategories(
+            newCategories as Parameters<typeof window.electronAPI.saveAssetsTagCategories>[0],
+          );
+        } else {
+          localStorage.setItem(TAG_CATEGORIES_STORAGE_KEY, JSON.stringify(newCategories));
+        }
+        return { tagCategories: newCategories };
+      });
+    }
   },
 
   deleteTagCategory: async (id) => {
-    set((state) => {
-      const newCategories = state.tagCategories.filter((c) => c.id !== id);
-      if (window.electronAPI?.saveAssetsTagCategories) {
-        window.electronAPI.saveAssetsTagCategories(
-          newCategories as Parameters<typeof window.electronAPI.saveAssetsTagCategories>[0],
-        );
-      } else {
-        localStorage.setItem(TAG_CATEGORIES_STORAGE_KEY, JSON.stringify(newCategories));
-      }
-      return { tagCategories: newCategories };
-    });
+    if (window.electronAPI?.tagCategoriesDelete) {
+      await window.electronAPI.tagCategoriesDelete(id);
+      set((state) => ({
+        tagCategories: state.tagCategories.filter((c) => c.id !== id),
+      }));
+    } else {
+      // Fallback to old behavior
+      set((state) => {
+        const newCategories = state.tagCategories.filter((c) => c.id !== id);
+        if (window.electronAPI?.saveAssetsTagCategories) {
+          window.electronAPI.saveAssetsTagCategories(
+            newCategories as Parameters<typeof window.electronAPI.saveAssetsTagCategories>[0],
+          );
+        } else {
+          localStorage.setItem(TAG_CATEGORIES_STORAGE_KEY, JSON.stringify(newCategories));
+        }
+        return { tagCategories: newCategories };
+      });
+    }
   },
 
   getAllTagsWithCategories: () => {

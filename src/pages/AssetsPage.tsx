@@ -131,6 +131,7 @@ export function AssetsPage() {
     updateFolder,
     deleteFolder,
     moveAssetsToFolder,
+    exportFolder,
     openAssetLocation,
   } = useAssetsStore();
   const [isOpeningPlayground, setIsOpeningPlayground] = useState(false);
@@ -196,6 +197,13 @@ export function AssetsPage() {
     loadAssets();
     loadFolders();
   }, [loadAssets, loadFolders]);
+
+  // Reload assets when navigating with predictionId filter to ensure fresh data
+  useEffect(() => {
+    if (predictionIdFilter) {
+      loadAssets();
+    }
+  }, [predictionIdFilter, loadAssets]);
 
   // Sync folderId with filter
   useEffect(() => {
@@ -750,6 +758,46 @@ export function AssetsPage() {
     [activeFolderId, deleteFolder, t],
   );
 
+  const handleFolderExport = useCallback(
+    async (folder: AssetFolder) => {
+      try {
+        const result = await exportFolder(folder.id);
+
+        if ("canceled" in result && result.canceled) {
+          return; // User canceled directory picker
+        }
+
+        if (!result.success || !result.exportPath) {
+          throw new Error(result.error || "Export failed");
+        }
+
+        toast({
+          title: t("assets.folders.folderExported", "Folder exported"),
+          description: t(
+            "assets.folders.folderExportedDesc",
+            'Exported {{copied}} file(s) to "{{path}}"',
+            {
+              copied: result.copied,
+              path: result.exportPath,
+            },
+          ),
+        });
+
+        if (result.errors && result.errors.length > 0) {
+          console.error("Export had errors:", result.errors);
+          console.error("First 5 errors:", result.errors.slice(0, 5));
+        }
+      } catch (error) {
+        toast({
+          title: t("common.error"),
+          description: (error as Error).message,
+          variant: "destructive",
+        });
+      }
+    },
+    [exportFolder, t],
+  );
+
   const handleAssetsMove = useCallback(
     async (assetIds: string[], folderId: string | null) => {
       await moveAssetsToFolder(assetIds, folderId);
@@ -833,6 +881,7 @@ export function AssetsPage() {
               }
             }}
             onFolderDelete={handleFolderDelete}
+            onFolderExport={handleFolderExport}
             onAssetsMove={handleAssetsMove}
             getAssetCount={handleGetFolderAssetCount}
             width="w-full"

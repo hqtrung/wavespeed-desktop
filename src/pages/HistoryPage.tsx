@@ -2,9 +2,11 @@ import { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { apiClient } from "@/api/client";
+import { webClient } from "@/api/web-client";
 import { historyCacheIpc } from "@/ipc/history";
 import { getHistorySyncService } from "@/lib/history-sync";
 import { useApiKeyStore } from "@/stores/apiKeyStore";
+import { useWebAuthStore } from "@/stores/webAuthStore";
 import { usePlaygroundStore } from "@/stores/playgroundStore";
 import { useModelsStore } from "@/stores/modelsStore";
 import { usePredictionInputsStore } from "@/stores/predictionInputsStore";
@@ -208,6 +210,7 @@ interface HistoryCardProps {
   onSelect: (item: HistoryItem) => void;
   onCustomize: (item: HistoryItem) => void;
   onDelete: (item: HistoryItem) => void;
+  isWebAuthed: boolean;
 }
 
 const HistoryCard = memo(function HistoryCard({
@@ -220,6 +223,7 @@ const HistoryCard = memo(function HistoryCard({
   onSelect,
   onCustomize,
   onDelete,
+  isWebAuthed,
 }: HistoryCardProps) {
   const { t } = useTranslation();
   const { ref, isInView } = useInView<HTMLDivElement>();
@@ -236,23 +240,45 @@ const HistoryCard = memo(function HistoryCard({
 
   useEffect(() => {
     if (isInView && !cachedInputs) {
-      console.log("[HistoryCard] Loading cached inputs for:", item.id);
-      historyCacheIpc
-        .get(item.id)
-        .then((cached) => {
-          console.log("[HistoryCard] Got cached item:", cached);
-          if (cached?.inputs) {
-            console.log("[HistoryCard] Setting cached inputs:", cached.inputs);
-            setCachedInputs(cached.inputs);
-          } else {
-            console.log("[HistoryCard] No inputs in cached item");
+      console.log("[HistoryCard] Loading inputs for:", item.id);
+
+      const loadInputs = async () => {
+        // Try cache first
+        const cached = await historyCacheIpc.get(item.id);
+        console.log("[HistoryCard] Got cached item:", cached);
+        if (cached?.inputs) {
+          console.log("[HistoryCard] Setting cached inputs:", cached.inputs);
+          setCachedInputs(cached.inputs);
+          return;
+        }
+
+        // If cache doesn't have inputs and web auth is available, try webClient
+        if (isWebAuthed) {
+          try {
+            console.log("[HistoryCard] Trying webClient for inputs");
+            const webDetail = await webClient.getPredictionDetail(
+              item.id,
+              item.id.match(/^\d+$/) ? parseInt(item.id, 10) : undefined,
+            );
+            if (webDetail.payload) {
+              const payload = JSON.parse(webDetail.payload);
+              console.log("[HistoryCard] Got inputs from webClient:", payload);
+              setCachedInputs(payload);
+              return;
+            }
+          } catch (err) {
+            console.log("[HistoryCard] webClient fetch failed:", err);
           }
-        })
-        .catch((err) => {
-          console.error("[HistoryCard] Failed to load cached item:", err);
-        });
+        }
+
+        console.log("[HistoryCard] No inputs available");
+      };
+
+      loadInputs().catch((err) => {
+        console.error("[HistoryCard] Failed to load inputs:", err);
+      });
     }
-  }, [isInView, item.id, cachedInputs]);
+  }, [isInView, item.id, cachedInputs, isWebAuthed]);
 
   // Extract prompt from inputs
   const prompt = useMemo(() => {
@@ -475,6 +501,10 @@ export function HistoryPage() {
     loadApiKey,
     hasAttemptedLoad,
   } = useApiKeyStore();
+
+  // Web auth for accessing prompts via /center/* endpoints
+  const { isAuthenticated: isWebAuthed } = useWebAuthStore();
+
   const { createTab, findFormValuesByPredictionId } = usePlaygroundStore();
   const { fetchModels, getModelById } = useModelsStore();
   const {
@@ -619,6 +649,44 @@ export function HistoryPage() {
     }
   };
 
+  // Helper to fetch prediction details with prompt from webClient if available
+  const fetchPredictionDetailsWithPrompt = useCallback(
+    async (uuid: string, currentId?: number): Promise<{
+      inputs?: Record<string, unknown>;
+      prompt?: string;
+    }> => {
+      // If web auth is available, try to fetch from /center/* endpoint
+      if (isWebAuthed) {
+        try {
+          const webDetail = await webClient.getPredictionDetail(uuid, currentId);
+          if (webDetail.payload) {
+            const payload = JSON.parse(webDetail.payload);
+            return {
+              inputs: payload,
+              prompt: payload.prompt as string,
+            };
+          }
+        } catch {
+          // Fall through to regular API
+        }
+      }
+
+      // Fallback to regular API
+      try {
+        const apiDetail = await apiClient.getPredictionDetails(uuid);
+        const apiInput =
+          (apiDetail as any).input || (apiDetail as any).inputs || {};
+        return {
+          inputs: apiInput,
+          prompt: apiInput.prompt as string,
+        };
+      } catch {
+        return {};
+      }
+    },
+    [isWebAuthed],
+  );
+
   const handleOpenInPlayground = useCallback(
     async (item: HistoryItem) => {
       const model = getModelById(item.model);
@@ -695,13 +763,14 @@ export function HistoryPage() {
         return;
       }
 
-      // Priority 5: Fetch prediction details from API
+      // Priority 5: Fetch prediction details from API (with web client prompt fallback)
       if (syncStatus !== "offline") {
         setIsOpeningPlayground(true);
         try {
-          const details = await apiClient.getPredictionDetails(item.id);
-          const apiInput =
-            (details as any).input || (details as any).inputs || {};
+          const { inputs: apiInput } = await fetchPredictionDetailsWithPrompt(
+            item.id,
+            item.id.match(/^\d+$/) ? parseInt(item.id, 10) : undefined,
+          );
           createTab(
             model,
             Object.keys(apiInput).length > 0
@@ -734,6 +803,7 @@ export function HistoryPage() {
       navigate,
       t,
       syncStatus,
+      fetchPredictionDetailsWithPrompt,
     ],
   );
 
@@ -1103,25 +1173,50 @@ export function HistoryPage() {
       "[HistoryPage] Loading inputs for selected item:",
       deferredSelectedItem.id,
     );
-    historyCacheIpc
-      .get(deferredSelectedItem.id)
-      .then((cached) => {
-        console.log("[HistoryPage] Got cached item for detail panel:", cached);
-        if (cached?.inputs) {
-          console.log(
-            "[HistoryPage] Setting detail panel inputs:",
-            cached.inputs,
+
+    const loadInputs = async () => {
+      // Try cache first
+      const cached = await historyCacheIpc.get(deferredSelectedItem.id);
+      console.log("[HistoryPage] Got cached item for detail panel:", cached);
+      if (cached?.inputs) {
+        console.log(
+          "[HistoryPage] Setting detail panel inputs from cache:",
+          cached.inputs,
+        );
+        setSelectedItemInputs(cached.inputs);
+        return;
+      }
+
+      // If cache doesn't have inputs and web auth is available, try webClient
+      if (isWebAuthed) {
+        try {
+          console.log("[HistoryPage] Trying webClient for inputs");
+          const webDetail = await webClient.getPredictionDetail(
+            deferredSelectedItem.id,
+            deferredSelectedItem.id.match(/^\d+$/)
+              ? parseInt(deferredSelectedItem.id, 10)
+              : undefined,
           );
-          setSelectedItemInputs(cached.inputs);
-        } else {
-          console.log("[HistoryPage] No inputs in cached item");
-          setSelectedItemInputs(null);
+          if (webDetail.payload) {
+            const payload = JSON.parse(webDetail.payload);
+            console.log("[HistoryPage] Got inputs from webClient:", payload);
+            setSelectedItemInputs(payload);
+            return;
+          }
+        } catch (err) {
+          console.log("[HistoryPage] webClient fetch failed:", err);
         }
-      })
-      .catch((err) => {
-        console.error("[HistoryPage] Failed to load inputs:", err);
-      });
-  }, [deferredSelectedItem]);
+      }
+
+      // No inputs available
+      console.log("[HistoryPage] No inputs available for selected item");
+      setSelectedItemInputs(null);
+    };
+
+    loadInputs().catch((err) => {
+      console.error("[HistoryPage] Failed to load inputs:", err);
+    });
+  }, [deferredSelectedItem, isWebAuthed]);
 
   const maxSelectablePages = 100;
 
@@ -1598,6 +1693,7 @@ export function HistoryPage() {
                     onSelect={setSelectedItem}
                     onCustomize={handleOpenInPlayground}
                     onDelete={setDeleteConfirmItem}
+                    isWebAuthed={isWebAuthed}
                   />
                 ))}
               </div>

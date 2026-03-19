@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Folder, FolderOpen, MoreVertical, Trash2, Edit3, FolderMinus } from "lucide-react";
+import { Folder, FolderOpen, MoreVertical, Trash2, Edit3, FolderMinus, Download } from "lucide-react";
 import type { AssetFolder } from "@/types/asset";
 import { getFolderColorClass } from "./folder-colors";
 import { cn } from "@/lib/utils";
@@ -19,6 +19,7 @@ interface FolderItemProps {
   onClick: () => void;
   onRename?: (folder: AssetFolder) => void;
   onDelete?: (folder: AssetFolder) => void;
+  onExport?: (folder: AssetFolder) => void;
   onDrop?: (assetIds: string[]) => void;
   isCollapsed?: boolean;
   isNoFolder?: boolean; // Special "No Folder" item for unassigned assets
@@ -31,6 +32,7 @@ export function FolderItem({
   onClick,
   onRename,
   onDelete,
+  onExport,
   onDrop,
   isCollapsed = false,
   isNoFolder = false,
@@ -147,13 +149,16 @@ export function FolderItem({
       )}
 
       {/* Context menu for custom folders only (not for No Folder) */}
-      {!isAllAssets && !isNoFolder && !isCollapsed && folder && onRename && onDelete && (
+      {!isAllAssets && !isNoFolder && folder && onRename && onDelete && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
             <Button
               variant="ghost"
               size="icon"
-              className="h-6 w-6 shrink-0 opacity-0 group-hover:opacity-100"
+              className={cn(
+                "h-6 w-6 shrink-0 opacity-0 group-hover:opacity-100",
+                isCollapsed && "mx-auto",
+              )}
             >
               <MoreVertical className="h-3 w-3" />
             </Button>
@@ -170,6 +175,19 @@ export function FolderItem({
                 }}
               />
             </DropdownMenuItem>
+            {onExport && (
+              <DropdownMenuItem onClick={(e) => e.stopPropagation()}>
+                <Download className="mr-2 h-4 w-4" />
+                {t("assets.folders.exportFolder", "Export")}
+                <button
+                  className="ml-auto w-full h-full absolute left-0 top-0"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onExport(folder);
+                  }}
+                />
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem
               className="text-destructive"
               onClick={(e) => e.stopPropagation()}

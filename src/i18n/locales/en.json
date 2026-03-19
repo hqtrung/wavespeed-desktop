@@ -623,7 +623,10 @@
       "folderDeleted": "Folder deleted",
       "folderDeletedDesc": "\"{{name}}\" has been deleted",
       "assetsMoved": "Assets moved",
-      "assetsMovedDesc": "{{count}} asset(s) moved to folder"
+      "assetsMovedDesc": "{{count}} asset(s) moved to folder",
+      "exportFolder": "Export",
+      "folderExported": "Folder exported",
+      "folderExportedDesc": "Exported {{copied}} file(s) to \"{{path}}\""
     }
   },
   "zImage": {

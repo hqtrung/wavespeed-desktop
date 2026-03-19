@@ -27,6 +27,7 @@ const isCapacitorNative = () => {
 };
 
 interface FeatureCardProps {
+  id?: string;
   icon: React.ReactNode;
   title: string;
   description: string;
@@ -134,6 +135,7 @@ export function WelcomePage() {
 
   const features: FeatureCardProps[] = [
     {
+      id: "featured-models",
       icon: <Star className="h-6 w-6 text-amber-600 dark:text-amber-400" />,
       title: t("welcome.featuredModels.title"),
       description: t("welcome.featuredModels.description"),
@@ -148,6 +150,7 @@ export function WelcomePage() {
       },
     },
     {
+      id: "models",
       icon: <Boxes className="h-6 w-6 text-blue-600 dark:text-blue-400" />,
       title: t("welcome.features.models.title"),
       description: t("welcome.features.models.description"),
@@ -158,6 +161,7 @@ export function WelcomePage() {
       badge: "500+",
     },
     {
+      id: "playground",
       icon: (
         <FlaskConical className="h-6 w-6 text-purple-600 dark:text-purple-400" />
       ),
@@ -169,6 +173,7 @@ export function WelcomePage() {
       href: "/playground",
     },
     {
+      id: "templates",
       icon: <FileText className="h-6 w-6 text-pink-600 dark:text-pink-400" />,
       title: t("welcome.features.templates.title"),
       description: t("welcome.features.templates.description"),
@@ -178,6 +183,7 @@ export function WelcomePage() {
       href: "/templates",
     },
     {
+      id: "history",
       icon: (
         <History className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
       ),
@@ -192,6 +198,7 @@ export function WelcomePage() {
     ...(!isMobile
       ? [
           {
+            id: "assets",
             icon: (
               <FolderHeart className="h-6 w-6 text-teal-600 dark:text-teal-400" />
             ),
@@ -208,6 +215,7 @@ export function WelcomePage() {
     ...(!isMobile
       ? [
           {
+            id: "workflow",
             icon: (
               <GitBranch className="h-6 w-6 text-blue-600 dark:text-blue-400" />
             ),
@@ -223,6 +231,7 @@ export function WelcomePage() {
       : []),
 
     {
+      id: "free-tools",
       icon: <Wand2 className="h-6 w-6 text-orange-600 dark:text-orange-400" />,
       title: t("welcome.features.freeTools.title"),
       description: t("welcome.features.freeTools.description"),
@@ -236,6 +245,7 @@ export function WelcomePage() {
     ...(!isMobile
       ? [
           {
+            id: "z-image",
             icon: (
               <Zap className="h-6 w-6 text-yellow-600 dark:text-yellow-400" />
             ),
@@ -280,7 +290,7 @@ export function WelcomePage() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5">
             {features.map((feature, index) => (
               <div
-                key={feature.href}
+                key={feature.id || feature.href}
                 className="animate-in fade-in slide-in-from-bottom-2 fill-mode-both"
                 style={{ animationDelay: `${index * 60}ms` }}
               >

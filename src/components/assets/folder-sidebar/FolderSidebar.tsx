@@ -16,6 +16,7 @@ interface FolderSidebarProps {
   onFolderCreate: () => void;
   onFolderUpdate: (folder: AssetFolder, updates: Partial<AssetFolder>) => void;
   onFolderDelete: (folder: AssetFolder) => void;
+  onFolderExport?: (folder: AssetFolder) => void;
   onAssetsMove: (assetIds: string[], folderId: string | null) => void;
   getAssetCount: (folderId: string | null) => number;
   // Optional width for resizable panel
@@ -31,6 +32,7 @@ export function FolderSidebar({
   onFolderCreate,
   onFolderUpdate,
   onFolderDelete,
+  onFolderExport,
   onAssetsMove,
   getAssetCount,
   width,
@@ -63,7 +65,7 @@ export function FolderSidebar({
   return (
     <div
       className={cn(
-        "flex flex-col border-r border-border/70 bg-muted/30",
+        "flex flex-col h-full border-r border-border/70 bg-muted/30",
         isCollapsed ? "w-12" : width || "w-56",
       )}
     >
@@ -130,6 +132,7 @@ export function FolderSidebar({
               onClick={() => onFolderSelect(folder.id)}
               onRename={(f) => onFolderUpdate(f, {})}
               onDelete={onFolderDelete}
+              onExport={onFolderExport}
               onDrop={(ids) => handleDrop(ids, folder.id)}
               isCollapsed={isCollapsed}
             />

@@ -5,6 +5,7 @@ import { apiClient } from "@/api/client";
 import { useThemeStore, type Theme } from "@/stores/themeStore";
 import { useAssetsStore } from "@/stores/assetsStore";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { useWebAuthStore } from "@/stores/webAuthStore";
 import { languages } from "@/i18n";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -65,6 +66,9 @@ import {
   X,
   Clock,
   Settings,
+  LogIn,
+  LogOut,
+  Link as LinkIcon,
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 
@@ -107,6 +111,16 @@ export function SettingsPage() {
     setDownloadTimeout,
     initSettings: initGeneralSettings,
   } = useSettingsStore();
+
+  // Web auth state (for accessing /center/* endpoints with prompt data)
+  const {
+    isAuthenticated: isWebAuthed,
+    user: webUser,
+    isLoading: isWebAuthLoading,
+    signIn: webSignIn,
+    signOut: webSignOut,
+  } = useWebAuthStore();
+
   const [inputKey, setInputKey] = useState(apiKey);
   const [showKey, setShowKey] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -838,6 +852,96 @@ export function SettingsPage() {
               {t("common.clear")}
             </Button>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Web Authentication (for accessing /center/* endpoints with prompt data) */}
+      <Card className="mt-6">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <LinkIcon className="h-5 w-5" />
+                Web Authentication
+              </CardTitle>
+              <CardDescription>
+                Sign in with GitHub or Google to view prompts in history
+              </CardDescription>
+            </div>
+            {isWebAuthed && (
+              <Badge variant="secondary" className="flex items-center gap-1">
+                <Check className="h-3 w-3" />
+                Connected
+              </Badge>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {isWebAuthed ? (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">{webUser?.user_name}</p>
+                  <p className="text-xs text-muted-foreground">{webUser?.email}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {webUser?.org_name}
+                  </p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={webSignOut}
+                  disabled={isWebAuthLoading}
+                >
+                  <LogOut className="h-4 w-4 mr-2" />
+                  Sign Out
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Web authentication enables viewing full prompts in history. Your
+                session is stored locally.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Sign in to view prompts when browsing your prediction history.
+                This uses the same OAuth as wavespeed.ai (GitHub/Google).
+              </p>
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={async () => {
+                  const result = await webSignIn();
+                  if (!result.success) {
+                    toast({
+                      title: "Authentication failed",
+                      description: result.error || "Please try again",
+                      variant: "destructive",
+                    });
+                  } else {
+                    toast({
+                      title: "Authentication successful",
+                      description: "You can now view prompts in history",
+                    });
+                  }
+                }}
+                disabled={isWebAuthLoading}
+              >
+                {isWebAuthLoading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Connecting...
+                  </>
+                ) : (
+                  <>
+                    <LogIn className="h-4 w-4 mr-2" />
+                    Sign In with GitHub/Google
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
 

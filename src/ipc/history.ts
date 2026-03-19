@@ -65,19 +65,41 @@ export const historyCacheIpc = {
   }> => {
     // Fetch history and details in renderer (where API client is available)
     const { apiClient } = await import("@/api/client");
+    const { webClient } = await import("@/api/web-client");
+    const { useWebAuthStore } = await import("@/stores/webAuthStore");
+
+    // Check if user is web authenticated
+    const isWebAuthed = useWebAuthStore.getState().isAuthenticated;
+    console.log(`[History IPC] Web auth status: ${isWebAuthed}`);
 
     // Fetch history items with extended timeout (sync operations can take longer)
     const historyResponse = await apiClient.getHistory(1, 100, undefined, { timeout: 120000 });
     const historyItems = historyResponse.items || [];
 
-    // Fetch details for all items
+    // Fetch details for all items using webClient if available (for prompts), otherwise apiClient
     const detailItems = await Promise.all(
       historyItems.map(async (item) => {
+        // Try webClient first if authenticated (has prompts)
+        if (isWebAuthed) {
+          try {
+            const webDetail = await webClient.getPredictionDetail(item.id);
+            if (webDetail.payload) {
+              const payload = JSON.parse(webDetail.payload);
+              console.log(`[History IPC] WebClient found inputs for ${item.id}`);
+              return { id: item.id, input: payload };
+            }
+          } catch (webErr) {
+            console.log(`[History IPC] WebClient failed for ${item.id}:`, webErr);
+          }
+        }
+
+        // Fallback to regular API
         try {
           const details = await apiClient.getPredictionDetails(item.id);
-          console.log(`[History IPC] Details for ${item.id}:`, details);
-          console.log(`[History IPC] Input field:`, details.input);
-          return { id: item.id, input: details.input };
+          const input = (details as any).input || (details as any).inputs || {};
+          console.log(`[History IPC] API details for ${item.id}:`, details);
+          console.log(`[History IPC] API Input field:`, input);
+          return { id: item.id, input };
         } catch (err) {
           console.error(`[History IPC] Failed to fetch details for ${item.id}:`, err);
           return { id: item.id, input: undefined };

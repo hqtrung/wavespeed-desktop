@@ -432,7 +432,7 @@ class WaveSpeedClient {
       const response = await this.client.post<HistoryResponse>(
         "/api/v3/predictions",
         body,
-        options?.timeout ? { timeout: options.timeout } : undefined,
+        { timeout: options?.timeout ?? 120000 }, // Default 120s for history
       );
       if (response.data.code !== 200) {
         throw new APIError(response.data.message || "Failed to fetch history", {

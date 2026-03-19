@@ -103,6 +103,20 @@ const electronAPI = {
   openExternal: (url: string): Promise<void> =>
     ipcRenderer.invoke("open-external", url),
 
+  // Web authentication (OAuth for /center/* endpoints)
+  webAuthSignIn: (): Promise<{ success: boolean; token?: string; error?: string }> =>
+    ipcRenderer.invoke("web-auth-sign-in"),
+  webAuthRequest: (
+    token: string,
+    endpoint: string,
+    method?: "GET" | "POST",
+    body?: unknown,
+  ): Promise<{ success: boolean; data?: unknown; error?: string }> =>
+    ipcRenderer.invoke("web-auth-request", token, endpoint, method, body),
+  getWebAuthToken: (): Promise<string | null> => ipcRenderer.invoke("get-web-auth-token"),
+  setWebAuthToken: (token: string): Promise<boolean> => ipcRenderer.invoke("set-web-auth-token", token),
+  removeWebAuthToken: (): Promise<boolean> => ipcRenderer.invoke("remove-web-auth-token"),
+
   // Title bar theme
   updateTitlebarTheme: (isDark: boolean): Promise<void> =>
     ipcRenderer.invoke("update-titlebar-theme", isDark),
@@ -205,6 +219,103 @@ const electronAPI = {
       createdAt: string;
     }>,
   ): Promise<boolean> => ipcRenderer.invoke("save-assets-tag-categories", categories),
+  exportAssetsFolder: (
+    folderName: string,
+    folderId: string,
+    assetFilePaths: string[],
+  ) => ipcRenderer.invoke("export-assets-folder", folderName, folderId, assetFilePaths),
+  onAssetsExportProgress: (
+    callback: (data: {
+      phase: string;
+      progress: number;
+      current: number;
+      total: number;
+      errors?: string[];
+    }) => void,
+  ): (() => void) => {
+    const handler = (_: unknown, data: unknown) =>
+      callback(data as {
+        phase: string;
+        progress: number;
+        current: number;
+        total: number;
+        errors?: string[];
+      });
+    ipcRenderer.on("assets-export-progress", handler);
+    return () => ipcRenderer.removeListener("assets-export-progress", handler);
+  },
+
+  // === Database-based Assets APIs ===
+  assetsGetFiltered: (filter: {
+    types?: string[];
+    models?: string[];
+    sources?: string[];
+    dateFrom?: string;
+    dateTo?: string;
+    favoritesOnly?: boolean;
+    folderId?: string | null;
+    search?: string;
+    limit?: number;
+    cursor?: string;
+  }) => ipcRenderer.invoke("assets:get-filtered", filter),
+  assetsGetById: (id: string) => ipcRenderer.invoke("assets:get-by-id", id),
+  assetsGetByExecution: (executionId: string) => ipcRenderer.invoke("assets:get-by-execution", executionId),
+  assetsInsert: (asset: Omit<AssetMetadata, "tags"> & { tags: string[] }) =>
+    ipcRenderer.invoke("assets:insert", asset),
+  assetsUpdate: (
+    id: string,
+    updates: { tags?: string[]; favorite?: boolean; folderId?: string | null },
+  ) => ipcRenderer.invoke("assets:update", id, updates),
+  assetsDelete: (id: string) => ipcRenderer.invoke("assets:delete", id),
+  assetsDeleteMany: (ids: string[]) => ipcRenderer.invoke("assets:delete-many", ids),
+  assetsGetAllTags: () => ipcRenderer.invoke("assets:get-all-tags"),
+  assetsGetAllModels: () => ipcRenderer.invoke("assets:get-all-models"),
+  assetsHasForPrediction: (predictionId: string) => ipcRenderer.invoke("assets:has-for-prediction", predictionId),
+  assetsHasForExecution: (executionId: string) => ipcRenderer.invoke("assets:has-for-execution", executionId),
+  assetsMarkPending: (id: string) => ipcRenderer.invoke("assets:mark-pending", id),
+
+  // Folder APIs
+  foldersGetAll: () => ipcRenderer.invoke("folders:get-all"),
+  foldersGetById: (id: string) => ipcRenderer.invoke("folders:get-by-id", id),
+  foldersCreate: (folder: { name: string; color: string; icon?: string }) =>
+    ipcRenderer.invoke("folders:create", folder),
+  foldersUpdate: (
+    id: string,
+    updates: { name?: string; color?: string; icon?: string },
+  ) => ipcRenderer.invoke("folders:update", id, updates),
+  foldersDelete: (id: string, moveAssetsTo?: string | null) =>
+    ipcRenderer.invoke("folders:delete", id, moveAssetsTo),
+  foldersGetAssetCount: (folderId: string) => ipcRenderer.invoke("folders:get-asset-count", folderId),
+  foldersImportBackup: (backupPath: string) => ipcRenderer.invoke("assets:import-folders-backup", backupPath),
+
+  // Tag Category APIs
+  tagCategoriesGetAll: () => ipcRenderer.invoke("tag-categories:get-all"),
+  tagCategoriesGetById: (id: string) => ipcRenderer.invoke("tag-categories:get-by-id", id),
+  tagCategoriesCreate: (name: string, color: string, tags?: string[]) =>
+    ipcRenderer.invoke("tag-categories:create", name, color, tags),
+  tagCategoriesUpdate: (
+    id: string,
+    updates: { name?: string; color?: string; tags?: string[] },
+  ) => ipcRenderer.invoke("tag-categories:update", id, updates),
+  tagCategoriesDelete: (id: string) => ipcRenderer.invoke("tag-categories:delete", id),
+
+  // Sync State APIs
+  syncGetPending: () => ipcRenderer.invoke("sync:get-pending"),
+  syncGetState: (key: string) => ipcRenderer.invoke("sync:get-state", key),
+  syncGetFullState: () => ipcRenderer.invoke("sync:get-full-state"),
+  syncSetState: (key: string, value: string) => ipcRenderer.invoke("sync:set-state", key, value),
+  syncGetDeleted: () => ipcRenderer.invoke("sync:get-deleted"),
+  syncUpdateLastSync: () => ipcRenderer.invoke("sync:update-last-sync"),
+  syncIsEnabled: () => ipcRenderer.invoke("sync:is-enabled"),
+  syncSetEnabled: (enabled: boolean) => ipcRenderer.invoke("sync:set-enabled", enabled),
+  syncGetRecentLog: (limit?: number) => ipcRenderer.invoke("sync:get-recent-log", limit),
+  syncLogEvent: (entry: {
+    entityType: string;
+    entityId: string;
+    operation: "create" | "update" | "delete" | "move";
+    deviceId?: string;
+    version?: number;
+  }) => ipcRenderer.invoke("sync:log-event", entry),
 
   // Stable Diffusion APIs
   sdGetBinaryPath: (): Promise<{

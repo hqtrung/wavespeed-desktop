@@ -9,13 +9,15 @@ import {
   protocol,
   net,
 } from "electron";
-import { join, dirname } from "path";
+import * as pathModule from "path";
+import { join, dirname, basename } from "path";
 import {
   existsSync,
   readFileSync,
   writeFileSync,
   mkdirSync,
   unlinkSync,
+  rmSync,
   statSync,
   readdirSync,
   copyFileSync,
@@ -33,6 +35,7 @@ import { SDGenerator } from "./lib/sdGenerator";
 import log from "electron-log";
 import { initWorkflowModule, closeWorkflowDatabase } from "./workflow";
 import { initHistoryModule, closeHistoryDatabase } from "./history";
+import { initAssetsModule, closeAssetsDatabase } from "./assets";
 
 /**
  * Download a URL to a local file using Electron's net.fetch (Chromium network stack).
@@ -522,6 +525,149 @@ ipcMain.handle("open-external", async (_, url: string) => {
   await shell.openExternal(url);
 });
 
+// Web auth token storage (secure storage in main process, not localStorage)
+ipcMain.handle("get-web-auth-token", () => {
+  const state = loadState();
+  return state.webAuthToken ?? null;
+});
+
+ipcMain.handle("set-web-auth-token", (_, token: string) => {
+  const state = loadState();
+  state.webAuthToken = token;
+  saveState(state);
+  return true;
+});
+
+ipcMain.handle("remove-web-auth-token", () => {
+  const state = loadState();
+  delete state.webAuthToken;
+  saveState(state);
+  return true;
+});
+
+// OAuth sign-in handler — opens sign-in window and returns the token
+ipcMain.handle("web-auth-sign-in", async (): Promise<{ success: boolean; token?: string; error?: string }> => {
+  const signInUrl = "https://wavespeed.ai/sign-in?redirect=https%3A%2F%2Fwavespeed.ai%2F";
+
+  let authWindow: BrowserWindow | null = null;
+  let resolved = false;
+
+  const cleanup = () => {
+    if (authWindow && !authWindow.isDestroyed()) {
+      authWindow.close();
+    }
+    authWindow = null;
+  };
+
+  // Unified handler for both navigation events
+  const handleAuthSuccess = async () => {
+    if (resolved) return false;
+    resolved = true;
+
+    try {
+      const cookies = await authWindow!.webContents.session.cookies.get({
+        domain: ".wavespeed.ai",
+        name: "token",
+      });
+
+      if (cookies.length > 0 && cookies[0].value) {
+        cleanup();
+        return { success: true, token: cookies[0].value };
+      } else {
+        cleanup();
+        return { success: false, error: "Failed to extract authentication token" };
+      }
+    } catch (err) {
+      cleanup();
+      return { success: false, error: (err as Error).message };
+    }
+  };
+
+  return new Promise(async (resolve) => {
+    try {
+      authWindow = new BrowserWindow({
+        width: 600,
+        height: 800,
+        resizable: true,
+        modal: true,
+        webPreferences: {
+          nodeIntegration: false,
+          contextIsolation: true,
+        },
+      });
+
+      authWindow.on("closed", () => {
+        if (!resolved) {
+          resolved = true;
+          cleanup();
+          resolve({ success: false, error: "Authentication window was closed" });
+        }
+      });
+
+      // Unified navigation handler (covers both did-navigate and did-redirect-navigation)
+      authWindow.webContents.on("did-navigate", async (_, url) => {
+        if (resolved) return;
+        if (url.startsWith("https://wavespeed.ai/") && !url.includes("/sign-in")) {
+          const result = await handleAuthSuccess();
+          resolve(result);
+        }
+      });
+
+      authWindow.webContents.on("did-redirect-navigation", async (_, url) => {
+        if (resolved) return;
+        if (url.startsWith("https://wavespeed.ai/") && !url.includes("/sign-in")) {
+          const result = await handleAuthSuccess();
+          resolve(result);
+        }
+      });
+
+      // Load the sign-in page
+      await authWindow.loadURL(signInUrl);
+    } catch (err) {
+      if (!resolved) {
+        cleanup();
+        resolve({ success: false, error: (err as Error).message });
+      }
+    }
+  });
+});
+
+// Web-authenticated API request handler — makes requests to /center/ endpoints with cookie auth
+ipcMain.handle(
+  "web-auth-request",
+  async (
+    _,
+    token: string,
+    endpoint: string,
+    method: "GET" | "POST" = "GET",
+    body?: unknown,
+  ): Promise<{ success: boolean; data?: unknown; error?: string }> => {
+    try {
+      const url = `https://wavespeed.ai${endpoint}`;
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        Cookie: `token=${token}`,
+      };
+
+      let response;
+      if (method === "GET") {
+        response = await net.fetch(url, { headers });
+      } else {
+        response = await net.fetch(url, {
+          method: "POST",
+          headers,
+          body: body ? JSON.stringify(body) : undefined,
+        });
+      }
+
+      const data = await response.json();
+      return { success: response.ok, data };
+    } catch (err) {
+      return { success: false, error: (err as Error).message };
+    }
+  },
+);
+
 // Download file handler
 ipcMain.handle(
   "download-file",
@@ -672,6 +818,193 @@ ipcMain.handle("select-directory", async () => {
 
   return { success: true, path: result.filePaths[0] };
 });
+
+// Export assets folder to external directory
+ipcMain.handle(
+  "export-assets-folder",
+  async (event, folderName: string, folderId: string, assetFilePaths: string[]) => {
+    const focusedWindow = BrowserWindow.getFocusedWindow();
+    if (!focusedWindow) {
+      return { success: false, error: "No focused window" };
+    }
+
+    // Show directory picker dialog
+    const result = await dialog.showOpenDialog(focusedWindow, {
+      properties: ["openDirectory", "createDirectory"],
+      title: "Select Export Destination",
+    });
+
+    if (result.canceled || !result.filePaths[0]) {
+      return { success: false, canceled: true };
+    }
+
+    const destPath = result.filePaths[0];
+    const finalExportFolder = join(destPath, folderName);
+
+    // Use temporary directory for atomic operation
+    const tempExportFolder = join(destPath, `.${folderName}.temp`);
+
+    // Clean up any existing temp directory
+    if (existsSync(tempExportFolder)) {
+      try {
+        rmSync(tempExportFolder, { recursive: true });
+      } catch (err) {
+        return { success: false, error: `Failed to clean temp directory: ${(err as Error).message}` };
+      }
+    }
+
+    // Check if final folder already exists
+    if (existsSync(finalExportFolder)) {
+      return {
+        success: false,
+        error: `Folder "${folderName}" already exists in this location. Please remove it or choose a different name.`,
+      };
+    }
+
+    // Create temp export folder
+    try {
+      mkdirSync(tempExportFolder, { recursive: true });
+    } catch (error) {
+      return { success: false, error: `Failed to create temp folder: ${(error as Error).message}` };
+    }
+
+    // Send initial progress
+    event.sender.send("assets-export-progress", {
+      phase: "copying",
+      progress: 0,
+      current: 0,
+      total: assetFilePaths.length,
+    });
+
+    // Copy files preserving subdirectory structure
+    let copied = 0;
+    const errors: string[] = [];
+    let hasCriticalError = false;
+
+    try {
+      for (const filePath of assetFilePaths) {
+        try {
+          // Verify source file exists
+          if (!existsSync(filePath)) {
+            errors.push(`${basename(filePath)}: Source file not found`);
+            continue;
+          }
+
+          // Extract subdirectory type from path (images, videos, audio, text)
+          const pathParts = filePath.split(pathModule.sep);
+          const typeIndex = pathParts.findIndex((p) =>
+            ["images", "videos", "audio", "text"].includes(p),
+          );
+
+          let destFilePath: string;
+          if (typeIndex >= 0) {
+            // Preserve subdirectory structure
+            const subDir = pathParts[typeIndex];
+            const fileName = pathParts.slice(typeIndex + 1).join(pathModule.sep);
+            const targetDir = join(tempExportFolder, subDir);
+
+            // Ensure subdirectory exists
+            if (!existsSync(targetDir)) {
+              mkdirSync(targetDir, { recursive: true });
+            }
+
+            destFilePath = join(targetDir, fileName);
+          } else {
+            // No subdirectory, put directly in export folder
+            const fileName = pathParts[pathParts.length - 1];
+            destFilePath = join(tempExportFolder, fileName);
+          }
+
+          // Copy file
+          copyFileSync(filePath, destFilePath);
+          copied++;
+
+          // Send progress update
+          event.sender.send("assets-export-progress", {
+            phase: "copying",
+            progress: Math.round((copied / assetFilePaths.length) * 100),
+            current: copied,
+            total: assetFilePaths.length,
+          });
+        } catch (error) {
+          const errorMsg = `${basename(filePath)}: ${(error as Error).message}`;
+          errors.push(errorMsg);
+          // Critical errors (disk full, permissions) should abort
+          if ((error as NodeJS.ErrnoException).code === "ENOSPC" ||
+              (error as NodeJS.ErrnoException).code === "EACCES") {
+            hasCriticalError = true;
+            break;
+          }
+        }
+      }
+
+      // If critical error occurred, clean up temp folder and fail
+      if (hasCriticalError) {
+        try {
+          rmSync(tempExportFolder, { recursive: true });
+        } catch (err) {
+          console.error("[Export] Failed to clean temp folder after critical error:", err);
+        }
+        return {
+          success: false,
+          error: errors[errors.length - 1] || "Critical error during export",
+          copied,
+          total: assetFilePaths.length,
+        };
+      }
+
+      // Atomic rename: move temp folder to final location
+      try {
+        renameSync(tempExportFolder, finalExportFolder);
+      } catch (error) {
+        // Clean up temp folder if rename fails
+        try {
+          rmSync(tempExportFolder, { recursive: true });
+        } catch (err) {
+          console.error("[Export] Failed to clean temp folder after rename failed:", err);
+        }
+        return {
+          success: false,
+          error: `Failed to complete export: ${(error as Error).message}`,
+          copied,
+          total: assetFilePaths.length,
+        };
+      }
+
+      // Send completion
+      event.sender.send("assets-export-progress", {
+        phase: "complete",
+        progress: 100,
+        current: copied,
+        total: assetFilePaths.length,
+        errors,
+      });
+
+      return {
+        success: true,
+        exportPath: finalExportFolder,
+        copied,
+        total: assetFilePaths.length,
+        errors: errors.length > 0 ? errors : undefined,
+      };
+    } catch (error) {
+      // Clean up temp folder on unexpected error
+      try {
+        if (existsSync(tempExportFolder)) {
+          rmSync(tempExportFolder, { recursive: true });
+        }
+      } catch (err) {
+        console.error("[Export] Failed to clean temp folder after unexpected error:", err);
+      }
+      return {
+        success: false,
+        error: (error as Error).message,
+        copied,
+        total: assetFilePaths.length,
+      };
+    }
+  },
+);
 
 ipcMain.handle(
   "save-asset",
@@ -2159,6 +2492,11 @@ app.whenReady().then(() => {
     console.error("[History Cache] Failed to initialize:", err);
   });
 
+  // Initialize assets module (better-sqlite3 DB, IPC handlers)
+  initAssetsModule().catch((err) => {
+    console.error("[Assets] Failed to initialize:", err);
+  });
+
   // Setup auto-updater after window is created
   setupAutoUpdater();
 
@@ -2192,6 +2530,7 @@ app.on("before-quit", () => {
 app.on("window-all-closed", () => {
   closeWorkflowDatabase();
   closeHistoryDatabase();
+  closeAssetsDatabase();
   if (process.platform !== "darwin") {
     app.quit();
   }

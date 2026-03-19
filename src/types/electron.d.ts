@@ -133,6 +133,18 @@ export interface ElectronAPI {
   ) => Promise<DownloadResult>;
   openExternal: (url: string) => Promise<void>;
 
+  // Web authentication (OAuth for /center/* endpoints)
+  webAuthSignIn: () => Promise<{ success: boolean; token?: string; error?: string }>;
+  webAuthRequest: (
+    token: string,
+    endpoint: string,
+    method?: "GET" | "POST",
+    body?: unknown,
+  ) => Promise<{ success: boolean; data?: unknown; error?: string }>;
+  getWebAuthToken: () => Promise<string | null>;
+  setWebAuthToken: (token: string) => Promise<boolean>;
+  removeWebAuthToken: () => Promise<boolean>;
+
   // Title bar theme
   updateTitlebarTheme: (isDark: boolean) => Promise<void>;
 
@@ -174,6 +186,98 @@ export interface ElectronAPI {
       createdAt: string;
     }>
   >;
+
+  // === Database-based Assets APIs ===
+  assetsGetFiltered: (filter: {
+    types?: string[];
+    models?: string[];
+    sources?: string[];
+    dateFrom?: string;
+    dateTo?: string;
+    favoritesOnly?: boolean;
+    folderId?: string | null;
+    search?: string;
+    limit?: number;
+    cursor?: string;
+  }) => Promise<{
+    items: AssetMetadataElectron[];
+    nextCursor: string | null;
+    totalCount: number;
+  }>;
+  assetsGetById: (id: string) => Promise<AssetMetadataElectron | null>;
+  assetsGetByExecution: (executionId: string) => Promise<AssetMetadataElectron[]>;
+  assetsInsert: (asset: Omit<AssetMetadataElectron, "tags"> & { tags: string[] }) => Promise<string>;
+  assetsUpdate: (
+    id: string,
+    updates: { tags?: string[]; favorite?: boolean; folderId?: string | null },
+  ) => Promise<void>;
+  assetsDelete: (id: string) => Promise<void>;
+  assetsDeleteMany: (ids: string[]) => Promise<number>;
+  assetsGetAllTags: () => Promise<string[]>;
+  assetsGetAllModels: () => Promise<string[]>;
+  assetsHasForPrediction: (predictionId: string) => Promise<boolean>;
+  assetsHasForExecution: (executionId: string) => Promise<boolean>;
+  assetsMarkPending: (id: string) => Promise<void>;
+
+  // Folder APIs
+  foldersGetAll: () => Promise<
+    Array<{ id: string; name: string; color: string; icon?: string; createdAt: string }>
+  >;
+  foldersGetById: (id: string) => Promise<
+    { id: string; name: string; color: string; icon?: string; createdAt: string } | null
+  >;
+  foldersCreate: (folder: { name: string; color: string; icon?: string }) => Promise<string>;
+  foldersUpdate: (
+    id: string,
+    updates: { name?: string; color?: string; icon?: string },
+  ) => Promise<void>;
+  foldersDelete: (id: string, moveAssetsTo?: string | null) => Promise<void>;
+  foldersGetAssetCount: (folderId: string) => Promise<number>;
+  foldersImportBackup: (backupPath: string) => Promise<{ imported: number; total: number }>;
+
+  // Tag Category APIs
+  tagCategoriesGetAll: () => Promise<
+    Array<{ id: string; name: string; color: string; tags: string[]; createdAt: string }>
+  >;
+  tagCategoriesGetById: (id: string) => Promise<
+    | { id: string; name: string; color: string; tags: string[]; createdAt: string }
+    | undefined
+  >;
+  tagCategoriesCreate: (name: string, color: string, tags?: string[]) => Promise<string>;
+  tagCategoriesUpdate: (
+    id: string,
+    updates: { name?: string; color?: string; tags?: string[] },
+  ) => Promise<void>;
+  tagCategoriesDelete: (id: string) => Promise<void>;
+
+  // Sync State APIs
+  syncGetPending: () => Promise<{
+    assets: string[];
+    folders: string[];
+    categories: string[];
+  }>;
+  syncGetState: (key: string) => Promise<string | null>;
+  syncGetFullState: () => Promise<{
+    lastSyncAt: string | null;
+    deviceId: string | null;
+    remoteVersion: number | null;
+    syncEnabled: boolean;
+  }>;
+  syncSetState: (key: string, value: string) => Promise<void>;
+  syncGetDeleted: () => Promise<
+    Array<{ id: string; entityType: string; originalId: string }>
+  >;
+  syncUpdateLastSync: () => Promise<void>;
+  syncIsEnabled: () => Promise<boolean>;
+  syncSetEnabled: (enabled: boolean) => Promise<void>;
+  syncGetRecentLog: (limit?: number) => Promise<any[]>;
+  syncLogEvent: (entry: {
+    entityType: string;
+    entityId: string;
+    operation: "create" | "update" | "delete" | "move";
+    deviceId?: string;
+    version?: number;
+  }) => Promise<void>;
 
   // Stable Diffusion APIs
   sdGetBinaryPath: () => Promise<{

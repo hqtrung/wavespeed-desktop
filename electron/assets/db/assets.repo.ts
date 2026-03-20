@@ -238,6 +238,20 @@ export class AssetsRepository {
   }
 
   /**
+   * Check if asset exists by ID (including deleted).
+   * Returns sync_status if found, null otherwise.
+   */
+  getSyncStatus(id: string): string | null {
+    const db = getDatabase();
+    const result = db.exec(
+      "SELECT sync_status FROM assets WHERE id = ?",
+      [id]
+    );
+    if (result.length === 0 || result[0].values.length === 0) return null;
+    return result[0].values[0][0] as string;
+  }
+
+  /**
    * Get filtered assets with cursor-based pagination.
    */
   getFiltered(filter: AssetFilter): PaginatedResult<AssetMetadata> {

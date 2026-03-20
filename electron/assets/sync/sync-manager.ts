@@ -505,6 +505,14 @@ export class SyncManager {
    * Merge a remote asset into local database.
    */
   private mergeAsset(remote: any): "created" | "updated" | "conflict" | "skipped" {
+    // Check if asset exists locally (including deleted)
+    const localSyncStatus = assetsRepo.getSyncStatus(remote.id);
+
+    // If asset was locally deleted, don't restore it from remote
+    if (localSyncStatus === "deleted") {
+      return "skipped";
+    }
+
     const local = assetsRepo.getById(remote.id);
 
     if (!local) {

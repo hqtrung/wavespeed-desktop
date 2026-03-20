@@ -206,9 +206,23 @@ function createIndexes(db: SqlJsDatabase): void {
 
 /**
  * Run migrations (for schema evolution).
- * Currently at version 1, no migrations yet.
  */
 export function runMigrations(db: SqlJsDatabase): void {
+  // Ensure cloud_r2_key column exists (for databases created before it was added)
+  try {
+    const pragmaResult = db.exec("PRAGMA table_info(assets)");
+    const columns = pragmaResult[0]?.values ?? [];
+    const hasCloudR2Key = columns.some((row: unknown[]) => row[1] === "cloud_r2_key");
+
+    if (!hasCloudR2Key) {
+      console.log("[Assets DB] Adding cloud_r2_key column to assets table");
+      db.run("ALTER TABLE assets ADD COLUMN cloud_r2_key TEXT");
+    }
+  } catch (error) {
+    console.log("[Assets DB] cloud_r2_key migration check:", (error as Error).message);
+  }
+
+  // Standard version-based migrations
   const result = db.exec("SELECT MAX(version) as version FROM schema_version");
   const currentVersion = result[0]?.values?.[0]?.[0] as number ?? 0;
 

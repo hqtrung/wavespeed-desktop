@@ -79,6 +79,8 @@ import {
   GitBranch,
   Wrench,
   Cpu,
+  Cloud,
+  HardDrive,
 } from "lucide-react";
 import type {
   AssetMetadata,
@@ -437,6 +439,28 @@ export function AssetsPage() {
     },
     [openAssetLocation],
   );
+
+  // R2 config cache for R2 URL button
+  const [r2PublicUrl, setR2PublicUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Fetch R2 config once for the preview dialog
+    if (window.electronAPI?.r2GetConfig) {
+      window.electronAPI.r2GetConfig().then((config) => {
+        if (config?.publicUrl) {
+          setR2PublicUrl(config.publicUrl);
+        }
+      }).catch((error) => {
+        console.warn("[AssetsPage] Failed to fetch R2 config:", error);
+      });
+    }
+  }, []);
+
+  // Get R2 public URL from cloud_r2_key
+  const getR2Url = useCallback((asset: AssetMetadata): string | null => {
+    if (!asset.cloudR2Key || !r2PublicUrl) return null;
+    return `${r2PublicUrl}/${asset.cloudR2Key}`;
+  }, [r2PublicUrl]);
 
   // Load prediction inputs on mount
   useEffect(() => {
@@ -1253,6 +1277,7 @@ export function AssetsPage() {
                   isSelectionMode={isSelectionMode}
                   isSelected={selectedIds.has(asset.id)}
                   selectedIds={selectedIds}
+                  folders={folders}
                   onToggleSelect={handleToggleSelect}
                   onSelect={setPreviewAsset}
                   onOpenLocation={handleOpenLocation}
@@ -1424,6 +1449,34 @@ export function AssetsPage() {
                 ? t("assets.unfavorite")
                 : t("assets.favorite")}
             </Button>
+            {/* Cloud Sync Status Badge */}
+            {deferredPreviewAsset?.cloudR2Key ? (
+              <Badge variant="outline" className="gap-1 h-9 px-3">
+                <Cloud className="h-3 w-3" />
+                {t("assets.syncedToR2", "Synced to R2")}
+              </Badge>
+            ) : (
+              <Badge variant="secondary" className="gap-1 h-9 px-3">
+                <HardDrive className="h-3 w-3" />
+                {t("assets.localOnly", "Local only")}
+              </Badge>
+            )}
+            {/* R2 URL Button */}
+            {deferredPreviewAsset && (() => {
+              const url = getR2Url(deferredPreviewAsset);
+              return url && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    window.electronAPI?.openExternal(url)
+                  }
+                >
+                  <Cloud className="h-4 w-4 mr-1" />
+                  {t("assets.openInR2", "Open in R2")}
+                </Button>
+              );
+            })()}
           </DialogFooter>
         </DialogContent>
       </Dialog>

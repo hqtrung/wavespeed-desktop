@@ -14,7 +14,8 @@ import {
   GitBranch,
   Sparkles,
 } from "lucide-react";
-import type { AssetMetadata, AssetType } from "@/types/asset";
+import type { AssetMetadata, AssetType, AssetFolder } from "@/types/asset";
+import { getFolderName, getFolderColor, getFolderColorClass } from "@/components/assets/folder-sidebar";
 import { formatBytes } from "@/types/progress";
 import { useInView } from "@/hooks/useInView";
 import { Button } from "@/components/ui/button";
@@ -134,6 +135,7 @@ export interface AssetCardProps {
   isSelectionMode: boolean;
   isSelected: boolean;
   selectedIds: Set<string>;
+  folders: AssetFolder[];
   onToggleSelect: (id: string) => void;
   onSelect: (asset: AssetMetadata) => void;
   onOpenLocation: (asset: AssetMetadata) => void;
@@ -153,6 +155,7 @@ export const AssetCard = memo(function AssetCard({
   isSelectionMode,
   isSelected,
   selectedIds,
+  folders,
   onToggleSelect,
   onSelect,
   onOpenLocation,
@@ -277,22 +280,36 @@ export const AssetCard = memo(function AssetCard({
             <p className="text-sm font-medium truncate" title={asset.fileName}>
               {asset.fileName}
             </p>
-            {asset.source === "workflow" && asset.workflowName ? (
-              <p
-                className="text-xs text-blue-400 truncate flex items-center gap-1"
-                title={`Workflow: ${asset.workflowName}`}
-              >
-                <GitBranch className="h-3 w-3 shrink-0" />
-                {asset.workflowName}
-              </p>
-            ) : (
-              <p
-                className="text-xs text-muted-foreground truncate"
-                title={asset.modelId}
-              >
-                {asset.modelId}
-              </p>
-            )}
+            {/* Folder badge or "No Folder" */}
+            {(() => {
+              const folderName = asset.folderId
+                ? getFolderName(asset.folderId, folders)
+                : undefined;
+              const folderColor = asset.folderId
+                ? getFolderColor(asset.folderId, folders)
+                : undefined;
+
+              return asset.folderId && folderName ? (
+                <div className="flex items-center gap-1">
+                  <div
+                    className={cn(
+                      "h-2 w-2 rounded-full shrink-0",
+                      getFolderColorClass(folderColor),
+                    )}
+                  />
+                  <span
+                    className="text-xs text-muted-foreground truncate"
+                    title={folderName}
+                  >
+                    {folderName}
+                  </span>
+                </div>
+              ) : (
+                <span className="text-xs text-muted-foreground">
+                  {t("assets.noFolder", "No Folder")}
+                </span>
+              );
+            })()}
             <p className="text-xs text-muted-foreground">
               {formatDate(asset.createdAt)} · {formatBytes(asset.fileSize)}
             </p>

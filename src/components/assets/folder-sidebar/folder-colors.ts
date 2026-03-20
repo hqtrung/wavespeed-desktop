@@ -1,3 +1,5 @@
+import type { AssetFolder } from "@/types/asset";
+
 /**
  * Color palette for asset folders
  * Provides 12 preset colors for folder customization
@@ -23,4 +25,29 @@ export const DEFAULT_FOLDER_COLOR = FOLDER_COLORS[7].value; // Blue
 export function getFolderColorClass(value: string): string {
   const color = FOLDER_COLORS.find((c) => c.value === value);
   return color?.className || FOLDER_COLORS[7].className;
+}
+
+/**
+ * Get folder color value (hex) from folder ID
+ * Requires the folders array from assetsStore
+ */
+export function getFolderColor(
+  folderId: string | undefined,
+  folders: AssetFolder[],
+): string {
+  if (!folderId) return DEFAULT_FOLDER_COLOR;
+  const folder = folders.find((f) => f.id === folderId);
+  return folder?.color || DEFAULT_FOLDER_COLOR;
+}
+
+/**
+ * Get folder name from folder ID
+ * Requires the folders array from assetsStore
+ */
+export function getFolderName(
+  folderId: string | undefined,
+  folders: AssetFolder[],
+): string | undefined {
+  if (!folderId) return undefined;
+  return folders.find((f) => f.id === folderId)?.name;
 }

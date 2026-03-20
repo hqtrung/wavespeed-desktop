@@ -35,9 +35,11 @@ export const isDesktopMode = !!window.electronAPI?.saveAsset;
 
 // Get asset URL for preview (local-asset:// in desktop for proper video/audio support)
 export function getAssetUrl(asset: AssetMetadata): string {
-  if (asset.filePath) {
+  // Use local file if available
+  if (asset.locallyAvailable && asset.filePath) {
     return `local-asset://${encodeURIComponent(asset.filePath)}`;
   }
+  // Fall back to original URL (R2 or remote)
   return asset.originalUrl || "";
 }
 

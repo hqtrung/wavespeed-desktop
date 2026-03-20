@@ -10,9 +10,12 @@ import type { AssetMetadata } from "@/types/asset";
 
 // Row -> Metadata converter
 export function rowToMetadata(row: unknown[]): AssetMetadata {
+  const filePath = row[1] as string;
+  const { existsSync } = require("fs");
+
   return {
     id: row[0] as string,
-    filePath: row[1] as string,
+    filePath,
     fileName: row[2] as string,
     type: row[3] as "image" | "video" | "audio" | "text" | "json",
     modelId: row[4] as string,
@@ -30,7 +33,7 @@ export function rowToMetadata(row: unknown[]): AssetMetadata {
     executionId: (row[16] as string | null) ?? undefined,
     folderId: (row[17] as string | null) ?? undefined,
     cloudR2Key: (row[19] as string | null) ?? undefined,
-    locallyAvailable: true, // Will be computed by frontend checking file existence
+    locallyAvailable: filePath ? existsSync(filePath) : false,
   };
 }
 

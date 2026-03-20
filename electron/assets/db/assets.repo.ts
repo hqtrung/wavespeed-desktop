@@ -429,14 +429,21 @@ export class AssetsRepository {
 
   /**
    * Update asset from sync (remote data).
+   * Does NOT overwrite locally deleted assets - deletion wins.
    */
   upsertFromSync(asset: AssetRow): void {
     const db = getDatabase();
-    const result = db.exec("SELECT id, version FROM assets WHERE id = ?", [asset.id]);
+    const result = db.exec("SELECT id, version, sync_status FROM assets WHERE id = ?", [asset.id]);
 
     if (result.length > 0 && result[0].values.length > 0) {
       const existing = result[0].values[0] as unknown[];
       const existingVersion = existing[1] as number;
+      const existingSyncStatus = existing[2] as string;
+
+      // If locally deleted, never restore from remote - deletion wins
+      if (existingSyncStatus === "deleted") {
+        return;
+      }
 
       // Only update if remote version is newer
       if (asset.version > existingVersion) {

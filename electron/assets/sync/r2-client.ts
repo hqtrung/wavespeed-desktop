@@ -50,14 +50,6 @@ export class R2Client {
   private publicEndpoint?: string;
 
   constructor(config: R2Config) {
-    console.log("[R2Client] Constructor called with:", {
-      hasAccountId: !!config.accountId,
-      accountId: config.accountId?.substring(0, 10) + "...",
-      hasAccessKeyId: !!config.accessKeyId,
-      hasSecretAccessKey: !!config.secretAccessKey,
-      bucket: config.bucket,
-      publicUrl: config.publicUrl,
-    });
     this.config = config;
 
     // Initialize S3Client with R2 credentials
@@ -73,7 +65,6 @@ export class R2Client {
 
     // r2.dev public endpoint for unauthenticated downloads (if bucket is public)
     this.publicEndpoint = config.publicUrl || undefined;
-    console.log("[R2Client] Endpoint:", `https://${config.accountId}.r2.cloudflarestorage.com`);
   }
 
   /**

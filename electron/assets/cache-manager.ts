@@ -7,6 +7,9 @@ import { existsSync, statSync, unlinkSync } from "fs";
 import { join, dirname } from "path";
 import { getDatabase } from "./db/connection";
 
+// Sync status constants
+const SYNC_STATUS_DELETED = "deleted";
+
 export interface CacheStats {
   totalBytes: number;
   totalFiles: number;
@@ -60,8 +63,8 @@ export class CacheManager {
           SUM(file_size) as total_bytes,
           MIN(created_at) as oldest_access
         FROM assets
-        WHERE sync_status != 'deleted'
-      `);
+        WHERE sync_status != ?
+      `, [SYNC_STATUS_DELETED]);
 
       if (result.length > 0 && result[0].values.length > 0) {
         const row = result[0].values[0];
@@ -109,9 +112,9 @@ export class CacheManager {
       const result = db.exec(`
         SELECT id, file_path, file_size
         FROM assets
-        WHERE sync_status != 'deleted'
+        WHERE sync_status != ?
         ORDER BY created_at ASC
-      `);
+      `, [SYNC_STATUS_DELETED]);
 
       if (result.length > 0) {
         for (const row of result[0].values) {
@@ -121,17 +124,19 @@ export class CacheManager {
           const filePath = row[1] as string;
           const fileSize = row[2] as number;
 
-          // Delete file from disk (unlink throws if not exists, which we catch)
-          try {
-            unlinkSync(filePath);
-            freed += fileSize;
-          } catch (err) {
-            // File may not exist or other error - continue
-            console.error(`[CacheManager] Failed to delete file ${filePath}:`, err);
+          // Check file exists before attempting deletion (avoid unnecessary exceptions)
+          if (existsSync(filePath)) {
+            try {
+              unlinkSync(filePath);
+              freed += fileSize;
+            } catch (err) {
+              // File may have been deleted concurrently or other error
+              console.error(`[CacheManager] Failed to delete file ${filePath}:`, err);
+            }
           }
 
-          // Note: We keep the DB record but can add a flag for locally_available
-          // This will be implemented as part of the cache state table
+          // TODO: Mark asset as !locally_available in database for accurate cache state
+          // This requires adding locally_available column or asset_cache_state table
         }
       }
 
@@ -170,20 +175,22 @@ export class CacheManager {
 
     try {
       const db = getDatabase();
-      const result = db.exec("SELECT file_path, file_size FROM assets WHERE sync_status != 'deleted'");
+      const result = db.exec("SELECT file_path, file_size FROM assets WHERE sync_status != ?", [SYNC_STATUS_DELETED]);
 
       if (result.length > 0) {
         for (const row of result[0].values) {
           const filePath = row[0] as string;
           const fileSize = row[1] as number;
 
-          try {
-            unlinkSync(filePath);
-            deleted++;
-            freed += fileSize;
-          } catch (err) {
-            // File may not exist or other error - continue
-            console.error(`[CacheManager] Failed to delete ${filePath}:`, err);
+          // Check file exists before attempting deletion
+          if (existsSync(filePath)) {
+            try {
+              unlinkSync(filePath);
+              deleted++;
+              freed += fileSize;
+            } catch (err) {
+              console.error(`[CacheManager] Failed to delete ${filePath}:`, err);
+            }
           }
         }
       }

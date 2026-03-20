@@ -16,6 +16,11 @@ import { getCacheManager, type CacheStats } from "./cache-manager";
 import { getAssetSyncQueue, type SyncQueueStats } from "./asset-sync-queue";
 import type { R2Client } from "./sync/r2-client";
 
+// Sync status constants
+const SYNC_STATUS_DELETED = "deleted";
+const SYNC_STATUS_SYNCED = "synced";
+const SYNC_STATUS_PENDING = "pending";
+
 // Trigger auto-sync after data changes
 function triggerAutoSync(): void {
   try {
@@ -809,7 +814,7 @@ export function registerAssetsIpcHandlers(): void {
 
     // Get all assets - direct query to avoid pagination issues
     const db = getDatabase();
-    const rowsResult = db.exec("SELECT * FROM assets WHERE sync_status != 'deleted'");
+    const rowsResult = db.exec("SELECT * FROM assets WHERE sync_status != ?", [SYNC_STATUS_DELETED]);
     const rows = rowsResult[0]?.values ?? [];
     const { rowToMetadata } = await import("./db/assets.repo");
     const assets = rows.map((row) => rowToMetadata(row));

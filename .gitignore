@@ -96,6 +96,9 @@ tmpclaude-*
 # Workflow data (dev mode storage)
 workflow-data/
 
+# Assets data (user database - contains local file paths)
+assets-data/
+
 # Test build outputs
 out-test/
 README.zh-CN.md

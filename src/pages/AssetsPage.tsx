@@ -48,6 +48,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Slider } from "@/components/ui/slider";
 import { toast } from "@/hooks/useToast";
 import { cn } from "@/lib/utils";
 import {
@@ -78,6 +79,7 @@ import {
   FolderHeart,
   GitBranch,
   Wrench,
+  ZoomIn,
   Cpu,
   Cloud,
   HardDrive,
@@ -181,6 +183,18 @@ export function AssetsPage() {
 
   // Preview toggle
   const [loadPreviews, setLoadPreviews] = useState(true);
+
+  // Thumbnail size state (persisted to localStorage)
+  const [thumbnailSize, setThumbnailSize] = useState(() => {
+    const saved = localStorage.getItem("assets-thumbnail-size");
+    return saved ? parseInt(saved, 10) : 200;
+  });
+
+  const handleThumbnailSizeChange = (value: number[]) => {
+    const newSize = value[0];
+    setThumbnailSize(newSize);
+    localStorage.setItem("assets-thumbnail-size", newSize.toString());
+  };
 
   // Folder state
   const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
@@ -1055,9 +1069,26 @@ export function AssetsPage() {
             size="icon"
             onClick={() => setShowFilters(!showFilters)}
             className="h-9 w-9 rounded-lg"
+            title={t("assets.filters", "Filters")}
           >
             <SlidersHorizontal className="h-4 w-4" />
           </Button>
+
+          {/* Thumbnail size slider */}
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-muted/50 rounded-lg">
+            <ZoomIn className="h-4 w-4 text-muted-foreground shrink-0" />
+            <Slider
+              value={[thumbnailSize]}
+              onValueChange={handleThumbnailSizeChange}
+              min={150}
+              max={400}
+              step={10}
+              className="w-24"
+            />
+            <span className="text-xs text-muted-foreground w-8 text-right tabular-nums">
+              {thumbnailSize}
+            </span>
+          </div>
           <div className="flex-1" />
           {isSelectionMode ? (
             <>
@@ -1265,7 +1296,12 @@ export function AssetsPage() {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-4 p-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+          <div
+            className="grid gap-4 p-4"
+            style={{
+              gridTemplateColumns: `repeat(auto-fill, minmax(${thumbnailSize}px, 1fr))`,
+            }}
+          >
             {paginatedAssets.map((asset, index) => {
               return (
                 <AssetCard

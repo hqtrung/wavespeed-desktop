@@ -29,6 +29,8 @@ export interface AssetMetadata {
   nodeId?: string;
   executionId?: string;
   folderId?: string; // Optional folder assignment
+  cloudR2Key?: string | null; // R2 storage key for cloud backup
+  locallyAvailable?: boolean; // Whether file exists locally (computed)
 }
 
 export interface AssetsFilter {

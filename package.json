@@ -37,6 +37,8 @@
     "test:watch": "vitest watch"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1013.0",
+    "@aws-sdk/s3-request-presigner": "^3.1013.0",
     "adm-zip": "^0.5.16",
     "date-fns": "^4.1.0",
     "electron-log": "^5.4.3",

@@ -279,6 +279,221 @@ export interface ElectronAPI {
     version?: number;
   }) => Promise<void>;
 
+  // Cloud Sync APIs
+  syncGetStatus: () => Promise<{
+    enabled: boolean;
+    lastSync: string | null;
+    pending: number;
+    isSyncing: boolean;
+  }>;
+  syncStart: () => Promise<{
+    success: boolean;
+    uploaded: { assets: number; folders: number; categories: number };
+    downloaded: { assets: number; folders: number; categories: number };
+    deleted: number;
+    conflicts: number;
+    errors: string[];
+    duration: number;
+  }>;
+  syncConfigure: (config: {
+    accountId: string;
+    databaseId: string;
+    apiToken: string;
+    bucket?: string;
+    accessKeyId?: string;
+    secretAccessKey?: string;
+    userId?: string;
+    deviceId?: string;
+    publicUrl?: string;
+  }) => Promise<{ success: boolean; deviceId?: string }>;
+  syncDisconnect: () => Promise<{ success: boolean }>;
+  syncTestConnection: (config: {
+    accountId: string;
+    databaseId: string;
+    apiToken: string;
+  }) => Promise<{ success: boolean; error?: string }>;
+  syncGetConfig: () => Promise<{
+    accountId: string | null;
+    databaseId: string | null;
+    deviceId: string | null;
+  }>;
+  syncInitSchema: () => Promise<{
+    success: boolean;
+    error?: string;
+  }>;
+  syncTriggersUpdate: (config: {
+    timerEnabled?: boolean;
+    intervalMinutes?: number;
+  }) => Promise<{
+    timerEnabled: boolean;
+    intervalMinutes: number;
+    focusDebounceMs: number;
+  }>;
+  syncTriggersGet: () => Promise<{
+    timerEnabled: boolean;
+    intervalMinutes: number;
+    focusDebounceMs: number;
+  }>;
+
+  // === R2 Storage Configuration APIs ===
+
+  /**
+   * Get R2 configuration from database.
+   */
+  r2GetConfig: () => Promise<{
+    accountId: string | null;
+    bucket: string | null;
+    accessKeyId: string | null;
+    secretAccessKey: string | null;
+    publicUrl: string | null;
+  }>;
+
+  /**
+   * Set R2 configuration in database.
+   */
+  r2SetConfig: (config: {
+    accountId?: string;
+    bucket?: string;
+    accessKeyId?: string;
+    secretAccessKey?: string;
+    publicUrl?: string;
+  }) => Promise<{
+    success: boolean;
+  }>;
+
+  /**
+   * Clear R2 configuration from database.
+   */
+  r2ClearConfig: () => Promise<{
+    success: boolean;
+  }>;
+
+  /**
+   * Upload all local assets to R2 cloud storage.
+   */
+  r2UploadAllAssets: () => Promise<{
+    total: number;
+    uploaded: number;
+    skipped: number;
+    failed: number;
+    errors: string[];
+  }>;
+
+  /**
+   * Listen for R2 upload progress updates.
+   * Returns an unsubscribe function.
+   */
+  onR2UploadProgress: (callback: (data: {
+    total: number;
+    uploaded: number;
+    skipped: number;
+    failed: number;
+    processed: number;
+    current: string;
+    fileProgress?: {
+      assetId: string;
+      fileName: string;
+      bytesUploaded: number;
+      totalBytes: number;
+      percentage: number;
+    };
+  }) => void) => () => void;
+
+  // === Hybrid Asset Storage APIs ===
+
+  /**
+   * Get file path with lazy loading from R2 if missing locally.
+   */
+  assetsGetFile: (id: string) => Promise<{
+    success: boolean;
+    filePath?: string;
+    locallyAvailable: boolean;
+    error?: string;
+  }>;
+
+  /**
+   * Explicitly download an asset to local cache.
+   */
+  assetsDownloadToCache: (id: string) => Promise<{
+    success: boolean;
+    filePath?: string;
+    alreadyCached: boolean;
+    error?: string;
+  }>;
+
+  /**
+   * Get cache statistics.
+   */
+  assetsGetCacheStats: () => Promise<{
+    totalBytes: number;
+    totalFiles: number;
+    maxBytes: number;
+    usagePercentage: number;
+    oldestAccess?: string;
+  }>;
+
+  /**
+   * Clear local cache (delete all files, keep metadata).
+   */
+  assetsClearCache: () => Promise<{
+    success: boolean;
+    deleted: number;
+    freed: number;
+  }>;
+
+  /**
+   * Set cache size limit.
+   */
+  assetsSetCacheLimit: (maxBytes: number) => Promise<{
+    success: boolean;
+  }>;
+
+  /**
+   * Get sync queue statistics.
+   */
+  assetsSyncQueueStats: () => Promise<{
+    pending: number;
+    downloaded: number;
+    failed: number;
+    isProcessing: boolean;
+  }>;
+
+  /**
+   * Queue missing assets for background download.
+   */
+  assetsSyncQueueMissing: (maxItems?: number) => Promise<{
+    success: boolean;
+    queued: number;
+  }>;
+
+  /**
+   * Start processing the sync queue.
+   */
+  assetsSyncQueueStart: () => Promise<{
+    success: boolean;
+  }>;
+
+  /**
+   * Cancel sync queue processing.
+   */
+  assetsSyncQueueCancel: () => Promise<{
+    success: boolean;
+  }>;
+
+  /**
+   * Clear the sync queue.
+   */
+  assetsSyncQueueClear: () => Promise<{
+    success: boolean;
+  }>;
+
+  /**
+   * Reset failed items in the queue.
+   */
+  assetsSyncQueueRetry: () => Promise<{
+    success: boolean;
+  }>;
+
   // Stable Diffusion APIs
   sdGetBinaryPath: () => Promise<{
     success: boolean;

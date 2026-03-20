@@ -317,6 +317,122 @@ const electronAPI = {
     version?: number;
   }) => ipcRenderer.invoke("sync:log-event", entry),
 
+  // Cloud Sync APIs
+  syncGetStatus: () => ipcRenderer.invoke("sync:get-status"),
+  syncStart: () => ipcRenderer.invoke("sync:start"),
+  syncConfigure: (config: {
+    accountId: string;
+    databaseId: string;
+    apiToken: string;
+    bucket?: string;
+    accessKeyId?: string;
+    secretAccessKey?: string;
+    userId?: string;
+    deviceId?: string;
+    publicUrl?: string;
+  }) => ipcRenderer.invoke("sync:configure", config),
+  syncDisconnect: () => ipcRenderer.invoke("sync:disconnect"),
+  syncTestConnection: (config: {
+    accountId: string;
+    databaseId: string;
+    apiToken: string;
+  }) => ipcRenderer.invoke("sync:test-connection", config),
+  syncGetConfig: () => ipcRenderer.invoke("sync:get-config"),
+  syncInitSchema: () => ipcRenderer.invoke("sync:init-schema"),
+  syncTriggersUpdate: (config: { timerEnabled?: boolean; intervalMinutes?: number }) =>
+    ipcRenderer.invoke("sync:triggers-update", config),
+  syncTriggersGet: () => ipcRenderer.invoke("sync:triggers-get"),
+
+  // === R2 Storage Configuration APIs ===
+  r2GetConfig: () => ipcRenderer.invoke("r2:get-config"),
+  r2SetConfig: (config: {
+    accountId?: string;
+    bucket?: string;
+    accessKeyId?: string;
+    secretAccessKey?: string;
+    publicUrl?: string;
+  }) => ipcRenderer.invoke("r2:set-config", config),
+  r2ClearConfig: () => ipcRenderer.invoke("r2:clear-config"),
+  r2UploadAllAssets: () => ipcRenderer.invoke("r2:upload-all-assets"),
+
+  // Listen for R2 upload progress updates
+  onR2UploadProgress: (
+    callback: (data: {
+      total: number;
+      uploaded: number;
+      skipped: number;
+      failed: number;
+      processed: number;
+      current: string;
+      fileProgress?: {
+        assetId: string;
+        fileName: string;
+        bytesUploaded: number;
+        totalBytes: number;
+        percentage: number;
+      };
+    }) => void,
+  ) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: unknown) => callback(data as Parameters<typeof callback>[0]);
+    ipcRenderer.on("r2:upload-progress", listener);
+    return () => ipcRenderer.removeListener("r2:upload-progress", listener);
+  },
+
+  // === Hybrid Asset Storage APIs ===
+  assetsGetFile: (id: string) => ipcRenderer.invoke("assets:get-file", id),
+  assetsDownloadToCache: (id: string) => ipcRenderer.invoke("assets:download-to-cache", id),
+  assetsGetCacheStats: () => ipcRenderer.invoke("assets:get-cache-stats"),
+  assetsClearCache: () => ipcRenderer.invoke("assets:clear-cache"),
+  assetsSetCacheLimit: (maxBytes: number) => ipcRenderer.invoke("assets:set-cache-limit", maxBytes),
+  assetsSyncQueueStats: () => ipcRenderer.invoke("assets:sync-queue-stats"),
+  assetsSyncQueueMissing: (maxItems?: number) => ipcRenderer.invoke("assets:sync-queue-missing", maxItems),
+  assetsSyncQueueStart: () => ipcRenderer.invoke("assets:sync-queue-start"),
+  assetsSyncQueueCancel: () => ipcRenderer.invoke("assets:sync-queue-cancel"),
+  assetsSyncQueueClear: () => ipcRenderer.invoke("assets:sync-queue-clear"),
+  assetsSyncQueueRetry: () => ipcRenderer.invoke("assets:sync-queue-retry"),
+
+  // Listen for sync queue progress updates
+  onAssetsSyncProgress: (
+    callback: (data: {
+      assetId: string;
+      fileName: string;
+      bytesDownloaded: number;
+      totalBytes: number;
+      percentage: number;
+    }) => void,
+  ): (() => void) => {
+    const handler = (_: unknown, data: unknown) =>
+      callback(data as {
+        assetId: string;
+        fileName: string;
+        bytesDownloaded: number;
+        totalBytes: number;
+        percentage: number;
+      });
+    ipcRenderer.on("assets:sync-progress", handler);
+    return () => ipcRenderer.removeListener("assets:sync-progress", handler);
+  },
+
+  // Listen for sync queue statistics updates
+  onAssetsSyncStats: (
+    callback: (stats: {
+      pending: number;
+      downloaded: number;
+      failed: number;
+      isProcessing: boolean;
+    }) => void,
+  ): (() => void) => {
+    const handler = (_: unknown, stats: unknown) =>
+      callback(stats as {
+        pending: number;
+        downloaded: number;
+        failed: number;
+        isProcessing: boolean;
+      });
+    ipcRenderer.on("assets:sync-stats", handler);
+    return () => ipcRenderer.removeListener("assets:sync-stats", handler);
+  },
+
   // Stable Diffusion APIs
   sdGetBinaryPath: (): Promise<{
     success: boolean;

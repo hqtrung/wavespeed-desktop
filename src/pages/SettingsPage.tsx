@@ -69,6 +69,9 @@ import {
   LogIn,
   LogOut,
   Link as LinkIcon,
+  Cloud,
+  CloudOff,
+  CheckCircle2,
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 
@@ -149,6 +152,52 @@ export function SettingsPage() {
   const [showCacheDialog, setShowCacheDialog] = useState(false);
   const [isDeletingItem, setIsDeletingItem] = useState<string | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+
+  // Cloud sync state
+  const [syncConfig, setSyncConfig] = useState({
+    accountId: "",
+    databaseId: "",
+    apiToken: "",
+    bucket: "",
+    accessKeyId: "",
+    secretAccessKey: "",
+    userId: "",
+    publicUrl: "",
+  });
+  // R2 config stored in D1 (separate from sync config)
+  const [r2StoredConfig, setR2StoredConfig] = useState({
+    accountId: "",
+    bucket: "",
+    accessKeyId: "",
+    secretAccessKey: "",
+    publicUrl: "",
+  });
+  const [syncStatus, setSyncStatus] = useState<{
+    enabled: boolean;
+    lastSync: string | null;
+    pending: number;
+    isSyncing: boolean;
+  } | null>(null);
+  const [isTestingConnection, setIsTestingConnection] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [showSyncToken, setShowSyncToken] = useState(false);
+  const [syncResult, setSyncResult] = useState<{
+    success: boolean;
+    uploaded: { assets: number; folders: number; categories: number };
+    downloaded: { assets: number; folders: number; categories: number };
+    deleted: number;
+    conflicts: number;
+    errors: string[];
+    duration: number;
+  } | null>(null);
+
+  // Helper to check if sync config is valid
+  const isSyncConfigValid = () => {
+    const aid = (syncConfig.accountId || "").trim();
+    const did = (syncConfig.databaseId || "").trim();
+    const token = (syncConfig.apiToken || "").trim();
+    return aid.length > 0 && did.length > 0 && token.length > 0;
+  };
 
   // Get the saved language preference (including 'auto')
   const [languagePreference, setLanguagePreference] = useState(() => {
@@ -516,6 +565,66 @@ export function SettingsPage() {
     return unsubscribe;
   }, []);
 
+  // Load sync configuration and status on mount
+  useEffect(() => {
+    const loadSyncConfig = async () => {
+      if (window.electronAPI?.syncGetConfig) {
+        const config = await window.electronAPI.syncGetConfig();
+        setSyncConfig((prev) => ({
+          ...prev,
+          accountId: config.accountId || "",
+          databaseId: config.databaseId || "",
+          // Load apiToken from localStorage for persistence
+          apiToken: localStorage.getItem("wavespeed_sync_api_token") || "",
+        }));
+      }
+    };
+    loadSyncConfig();
+  }, []);
+
+  // Load R2 storage config from D1 on mount
+  useEffect(() => {
+    const loadR2Config = async () => {
+      if (window.electronAPI?.r2GetConfig) {
+        const config = await window.electronAPI.r2GetConfig();
+        setR2StoredConfig({
+          accountId: config.accountId || "",
+          bucket: config.bucket || "",
+          accessKeyId: config.accessKeyId || "",
+          secretAccessKey: config.secretAccessKey || "",
+          publicUrl: config.publicUrl || "",
+        });
+        // Populate form with stored R2 config
+        setSyncConfig((prev) => ({
+          ...prev,
+          accountId: config.accountId || prev.accountId,
+          bucket: config.bucket || "",
+          accessKeyId: config.accessKeyId || "",
+          secretAccessKey: config.secretAccessKey || "",
+          publicUrl: config.publicUrl || "",
+        }));
+      }
+    };
+    loadR2Config();
+  }, []);
+
+  useEffect(() => {
+    const loadSyncStatus = async () => {
+      if (window.electronAPI?.syncGetStatus) {
+        const status = await window.electronAPI.syncGetStatus();
+        setSyncStatus(status);
+      }
+    };
+    loadSyncStatus();
+    // Poll sync status every 5 seconds when syncing
+    const interval = setInterval(() => {
+      if (syncStatus?.isSyncing) {
+        loadSyncStatus();
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [syncStatus?.isSyncing]);
+
   const handleSave = async () => {
     setIsSaving(true);
     try {
@@ -671,6 +780,218 @@ export function SettingsPage() {
       window.electronAPI.installUpdate();
     }
   }, []);
+
+  // Cloud sync handlers
+  const handleTestSyncConnection = async () => {
+    if (!window.electronAPI?.syncTestConnection) {
+      toast({
+        title: "Not available",
+        description: "Sync is only available in the desktop app",
+        variant: "destructive",
+      });
+      return;
+    }
+    setIsTestingConnection(true);
+    try {
+      const result = await window.electronAPI?.syncTestConnection({
+        accountId: syncConfig.accountId,
+        databaseId: syncConfig.databaseId,
+        apiToken: syncConfig.apiToken,
+      });
+      if (result?.success) {
+        toast({
+          title: "Connection successful",
+          description: "Successfully connected to Cloudflare D1",
+        });
+      } else {
+        toast({
+          title: "Connection failed",
+          description: result?.error || "Failed to connect to Cloudflare D1",
+          variant: "destructive",
+        });
+      }
+    } catch {
+      toast({
+        title: "Connection failed",
+        description: "Failed to connect to Cloudflare D1",
+        variant: "destructive",
+      });
+    } finally {
+      setIsTestingConnection(false);
+    }
+  };
+
+  const handleConfigureSync = async () => {
+    if (!window.electronAPI?.syncConfigure) {
+      toast({
+        title: "Not available",
+        description: "Sync is only available in the desktop app",
+        variant: "destructive",
+      });
+      return;
+    }
+    try {
+      // Save R2 config to D1 database
+      if (window.electronAPI?.r2SetConfig) {
+        await window.electronAPI.r2SetConfig({
+          accountId: syncConfig.accountId || undefined,
+          bucket: syncConfig.bucket || undefined,
+          accessKeyId: syncConfig.accessKeyId || undefined,
+          secretAccessKey: syncConfig.secretAccessKey || undefined,
+          publicUrl: syncConfig.publicUrl || undefined,
+        });
+      }
+
+      const result = await window.electronAPI?.syncConfigure({
+        accountId: syncConfig.accountId,
+        databaseId: syncConfig.databaseId,
+        apiToken: syncConfig.apiToken,
+        bucket: syncConfig.bucket || undefined,
+        accessKeyId: syncConfig.accessKeyId || undefined,
+        secretAccessKey: syncConfig.secretAccessKey || undefined,
+        userId: syncConfig.userId || undefined,
+        publicUrl: syncConfig.publicUrl || undefined,
+      });
+      if (result?.success) {
+        toast({
+          title: "Sync configured",
+          description: "Cloud sync has been configured successfully",
+        });
+        // Update stored R2 config
+        setR2StoredConfig({
+          bucket: syncConfig.bucket || "",
+          accessKeyId: syncConfig.accessKeyId || "",
+          secretAccessKey: syncConfig.secretAccessKey || "",
+          publicUrl: syncConfig.publicUrl || "",
+        });
+        // Reload sync status
+        const status = await window.electronAPI?.syncGetStatus();
+        setSyncStatus(status);
+      }
+    } catch {
+      toast({
+        title: "Configuration failed",
+        description: "Failed to configure cloud sync",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDisconnectSync = async () => {
+    try {
+      const result = await window.electronAPI?.syncDisconnect();
+      if (result?.success) {
+        toast({
+          title: "Sync disconnected",
+          description: "Cloud sync has been disconnected",
+        });
+        setSyncStatus(null);
+      }
+    } catch {
+      toast({
+        title: "Disconnect failed",
+        description: "Failed to disconnect cloud sync",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const [isUploadingToR2, setIsUploadingToR2] = useState(false);
+  const [r2UploadProgress, setR2UploadProgress] = useState<{
+    total: number;
+    uploaded: number;
+    skipped: number;
+    failed: number;
+    processed: number;
+    current: string;
+    fileProgress?: {
+      assetId: string;
+      fileName: string;
+      bytesUploaded: number;
+      totalBytes: number;
+      percentage: number;
+    };
+  } | null>(null);
+
+  // Set up R2 upload progress listener
+  useEffect(() => {
+    if (!window.electronAPI?.onR2UploadProgress) return;
+    const unsubscribe = window.electronAPI.onR2UploadProgress((data) => {
+      setR2UploadProgress(data);
+    });
+    return unsubscribe;
+  }, []);
+
+  const handleUploadToR2 = async () => {
+    console.log("[UI] Upload to R2 clicked");
+    if (!window.electronAPI?.r2UploadAllAssets) {
+      console.error("[UI] r2UploadAllAssets not available");
+      toast({
+        title: "Not available",
+        description: "R2 upload is only available in the desktop app",
+        variant: "destructive",
+      });
+      return;
+    }
+    console.log("[UI] Starting R2 upload...");
+    setIsUploadingToR2(true);
+    setR2UploadProgress(null);
+    try {
+      const result = await window.electronAPI.r2UploadAllAssets();
+      console.log("[UI] R2 upload result:", result);
+      toast({
+        title: "Upload complete",
+        description: `Uploaded ${result.uploaded}, skipped ${result.skipped}, failed ${result.failed}`,
+        variant: result.failed > 0 ? "destructive" : "default",
+      });
+      if (result.errors.length > 0) {
+        console.error("[R2 Upload errors]", result.errors);
+      }
+    } catch (error) {
+      console.error("[UI] R2 upload error:", error);
+      const message = error instanceof Error ? error.message : "Unknown error";
+      toast({
+        title: "Upload failed",
+        description: message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploadingToR2(false);
+      setR2UploadProgress(null);
+    }
+  };
+
+  const handleStartSync = async () => {
+    setIsSyncing(true);
+    setSyncResult(null);
+    try {
+      const result = await window.electronAPI?.syncStart();
+      setSyncResult(result);
+      // Reload sync status
+      const status = await window.electronAPI?.syncGetStatus();
+      setSyncStatus(status);
+      if (result?.success) {
+        toast({
+          title: "Sync complete",
+          description: `Uploaded: ${result.uploaded.assets} assets, ${result.uploaded.folders} folders. Downloaded: ${result.downloaded.assets} assets, ${result.downloaded.folders} folders.`,
+        });
+      } else {
+        toast({
+          title: "Sync completed with errors",
+          description: `${result?.errors.length} errors occurred`,
+          variant: "destructive",
+        });
+      }
+    } catch {
+      toast({
+        title: "Sync failed",
+        description: "Failed to complete sync",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   const renderUpdateStatus = () => {
     if (!updateStatus) return null;
@@ -1496,6 +1817,270 @@ export function SettingsPage() {
             <Github className="mr-2 h-4 w-4" />
             {t("settings.about.viewOnGitHub")}
           </Button>
+        </CardContent>
+      </Card>
+
+      {/* Cloud Sync Section */}
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Cloud className="h-5 w-5" />
+            Cloud Sync
+          </CardTitle>
+          <CardDescription>
+            Sync your assets, folders, and tags across devices using Cloudflare D1
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Sync Status */}
+          {syncStatus?.enabled && (
+            <div className="rounded-lg border bg-muted/50 p-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-green-500" />
+                  <span className="font-medium">Sync Enabled</span>
+                </div>
+                {syncStatus.isSyncing && (
+                  <Badge variant="secondary" className="gap-1">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    Syncing
+                  </Badge>
+                )}
+              </div>
+              <div className="text-sm text-muted-foreground space-y-1">
+                <div className="flex justify-between">
+                  <span>Last sync:</span>
+                  <span>{syncStatus.lastSync ? new Date(syncStatus.lastSync).toLocaleString() : "Never"}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Pending changes:</span>
+                  <span>{syncStatus.pending} items</span>
+                </div>
+              </div>
+              <div className="flex gap-2 pt-2">
+                <Button
+                  size="sm"
+                  onClick={handleStartSync}
+                  disabled={isSyncing || syncStatus.isSyncing}
+                >
+                  {isSyncing ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Syncing...
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="mr-2 h-4 w-4" />
+                      Sync Now
+                    </>
+                  )}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleUploadToR2}
+                  disabled={isUploadingToR2}
+                >
+                  {isUploadingToR2 ? "Uploading..." : "Upload to R2"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleDisconnectSync}
+                >
+                  Disconnect
+                </Button>
+              </div>
+
+              {/* R2 Upload Progress */}
+              {r2UploadProgress && (
+                <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                  <div className="flex items-center justify-between text-sm mb-2">
+                    <span className="font-medium">Uploading to R2...</span>
+                    <span className="text-muted-foreground">
+                      {r2UploadProgress.processed} / {r2UploadProgress.total}
+                    </span>
+                  </div>
+                  <Progress
+                    value={(r2UploadProgress.processed / r2UploadProgress.total) * 100}
+                    className="h-2"
+                  />
+                  <div className="flex items-center justify-between text-xs text-muted-foreground mt-1">
+                    <span className="truncate max-w-[200px]" title={r2UploadProgress.current}>
+                      {r2UploadProgress.current}
+                    </span>
+                    <span>
+                      {r2UploadProgress.uploaded} up, {r2UploadProgress.skipped} skip, {r2UploadProgress.failed} fail
+                    </span>
+                  </div>
+                  {r2UploadProgress.fileProgress && r2UploadProgress.fileProgress.percentage < 100 && (
+                    <div className="mt-2">
+                      <div className="text-xs text-muted-foreground mb-1">
+                        File: {Math.round(r2UploadProgress.fileProgress.percentage)}%
+                      </div>
+                      <Progress
+                        value={r2UploadProgress.fileProgress.percentage}
+                        className="h-1"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Sync Result */}
+          {syncResult && (
+            <div className={`rounded-lg border p-4 ${syncResult.success ? 'bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800' : 'bg-orange-50 dark:bg-orange-950/20 border-orange-200 dark:border-orange-800'}`}>
+              <div className="font-medium mb-2">{syncResult.success ? "Sync Complete" : "Sync Completed with Errors"}</div>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div>Uploaded: {syncResult.uploaded.assets} assets, {syncResult.uploaded.folders} folders</div>
+                <div>Downloaded: {syncResult.downloaded.assets} assets, {syncResult.downloaded.folders} folders</div>
+                {syncResult.deleted > 0 && <div>Deleted: {syncResult.deleted} items</div>}
+                {syncResult.conflicts > 0 && <div>Conflicts: {syncResult.conflicts}</div>}
+              </div>
+              <div className="text-xs text-muted-foreground mt-2">
+                Duration: {Math.round(syncResult.duration / 1000)}s
+              </div>
+              {syncResult.errors.length > 0 && (
+                <div className="mt-2 text-xs text-destructive">
+                  Errors: {syncResult.errors.slice(0, 3).join(", ")}
+                  {syncResult.errors.length > 3 && ` (+${syncResult.errors.length - 3} more)`}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Configuration Form */}
+          {!syncStatus?.enabled && (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="accountId">Account ID</Label>
+                <Input
+                  id="accountId"
+                  placeholder="40e577fef68ec2ebea917d66c8f5b050"
+                  value={syncConfig.accountId}
+                  onChange={(e) => setSyncConfig({ ...syncConfig, accountId: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="databaseId">Database ID</Label>
+                <Input
+                  id="databaseId"
+                  placeholder="9f8f0c7b-94ad-454b-bfc4-974277d559f9"
+                  value={syncConfig.databaseId}
+                  onChange={(e) => setSyncConfig({ ...syncConfig, databaseId: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="apiToken">API Token</Label>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Input
+                      id="apiToken"
+                      type={showSyncToken ? "text" : "password"}
+                      placeholder="cfat_..."
+                      value={syncConfig.apiToken}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setSyncConfig({ ...syncConfig, apiToken: value });
+                        localStorage.setItem("wavespeed_sync_api_token", value);
+                      }}
+                      className="pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowSyncToken(!showSyncToken)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showSyncToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Create a token with D1 edit permissions at{" "}
+                  <a
+                    href="https://dash.cloudflare.com/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-500 hover:underline"
+                  >
+                    Cloudflare Dashboard
+                  </a>
+                </p>
+              </div>
+
+              {/* R2 Storage Configuration */}
+              <div className="border-t pt-4 mt-4">
+                <h4 className="font-medium text-sm mb-3">R2 Storage (for asset backup)</h4>
+                <div className="space-y-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="bucket">Bucket Name</Label>
+                    <Input
+                      id="bucket"
+                      placeholder="ai-playground"
+                      value={syncConfig.bucket}
+                      onChange={(e) => setSyncConfig({ ...syncConfig, bucket: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="accessKeyId">Access Key ID</Label>
+                    <Input
+                      id="accessKeyId"
+                      placeholder="R2 Access Key ID"
+                      value={syncConfig.accessKeyId}
+                      onChange={(e) => setSyncConfig({ ...syncConfig, accessKeyId: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="secretAccessKey">Secret Access Key</Label>
+                    <Input
+                      id="secretAccessKey"
+                      type="password"
+                      placeholder="R2 Secret Access Key"
+                      value={syncConfig.secretAccessKey}
+                      onChange={(e) => setSyncConfig({ ...syncConfig, secretAccessKey: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="publicUrl">Public R2 URL (optional, for faster downloads)</Label>
+                    <Input
+                      id="publicUrl"
+                      placeholder="https://pub-xxx.r2.dev"
+                      value={syncConfig.publicUrl}
+                      onChange={(e) => setSyncConfig({ ...syncConfig, publicUrl: e.target.value })}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      If bucket is public, downloads will be faster (no authentication required)
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-2">
+                <Button
+                  onClick={handleTestSyncConnection}
+                  disabled={isTestingConnection || !isSyncConfigValid()}
+                  variant="outline"
+                >
+                  {isTestingConnection ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Testing...
+                    </>
+                  ) : (
+                    "Test Connection"
+                  )}
+                </Button>
+                <Button
+                  onClick={handleConfigureSync}
+                  disabled={!isSyncConfigValid()}
+                >
+                  Configure Sync
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

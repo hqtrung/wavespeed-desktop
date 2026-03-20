@@ -100,6 +100,7 @@ export class SyncRepository {
     id: string;
     entityType: string;
     originalId: string;
+    cloudR2Key: string | null;
   }> {
     const db = getDatabase();
     const result = db.exec("SELECT * FROM deleted_items WHERE synced = 0");
@@ -109,6 +110,7 @@ export class SyncRepository {
       id: row[0] as string,
       entityType: row[1] as string,
       originalId: row[2] as string,
+      cloudR2Key: (row[7] as string | null) ?? null, // cloud_r2_key is at index 7
     }));
   }
 

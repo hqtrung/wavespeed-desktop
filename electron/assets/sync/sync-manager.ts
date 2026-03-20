@@ -356,12 +356,13 @@ export class SyncManager {
   }
 
   /**
-   * Upload a deleted item marker to D1.
+   * Upload a deleted item marker to D1 and delete from R2 if applicable.
    */
   private async uploadDeleted(item: {
     id: string;
     entityType: string;
     originalId: string;
+    cloudR2Key: string | null;
   }): Promise<{ success: boolean; error?: string }> {
     if (!this.d1) return { success: false, error: "D1 client not configured" };
 
@@ -372,7 +373,29 @@ export class SyncManager {
           ? "tag_categories"
           : "assets";
 
-    return await this.d1.markDeleted(table, item.originalId, this.config.deviceId);
+    // Mark as deleted in D1
+    const d1Result = await this.d1.markDeleted(table, item.originalId, this.config.deviceId);
+    if (!d1Result.success) {
+      return d1Result;
+    }
+
+    // Delete from R2 if asset has R2 key
+    if (item.entityType === "asset" && item.cloudR2Key && this.r2) {
+      try {
+        const r2Result = await this.r2.deleteFile(item.cloudR2Key);
+        if (!r2Result.success) {
+          console.error(`[SyncManager] Failed to delete R2 file ${item.cloudR2Key}:`, r2Result.error);
+          // Don't fail the sync - log error but continue
+          // The tombstone is already synced, so deletion will be retried on next sync if needed
+        } else {
+          console.log(`[SyncManager] Deleted R2 file: ${item.cloudR2Key}`);
+        }
+      } catch (error) {
+        console.error(`[SyncManager] R2 deletion error for ${item.cloudR2Key}:`, (error as Error).message);
+      }
+    }
+
+    return { success: true };
   }
 
   /**

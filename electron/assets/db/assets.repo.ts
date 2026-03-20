@@ -143,6 +143,7 @@ export class AssetsRepository {
   delete(id: string): void {
     const now = new Date().toISOString();
     let filePathToDelete: string | null = null;
+    let cloudR2KeyToDelete: string | null = null;
 
     // First: Update DB in transaction
     transaction((db) => {
@@ -151,15 +152,18 @@ export class AssetsRepository {
       if (asset?.filePath) {
         filePathToDelete = asset.filePath;
       }
+      if (asset?.cloudR2Key) {
+        cloudR2KeyToDelete = asset.cloudR2Key;
+      }
 
       db.run("UPDATE assets SET sync_status = 'deleted', updated_at = ? WHERE id = ?", [now, id]);
 
-      // Create tombstone
+      // Create tombstone with R2 key for later deletion
       const tombstoneId = this.generateId();
       db.run(
-        `INSERT INTO deleted_items (id, entity_type, original_id, deleted_at, version, synced)
-         VALUES (?, 'asset', ?, ?, 1, 0)`,
-        [tombstoneId, id, now]
+        `INSERT INTO deleted_items (id, entity_type, original_id, deleted_at, version, synced, cloud_r2_key)
+         VALUES (?, 'asset', ?, ?, 1, 0, ?)`,
+        [tombstoneId, id, now, cloudR2KeyToDelete ?? null]
       );
     });
 
@@ -186,25 +190,32 @@ export class AssetsRepository {
     const now = new Date().toISOString();
     const tombstoneId = this.generateId();
     const filesToDelete: string[] = [];
+    const r2KeysToDelete: string[] = [];
 
-    // First: Update DB in transaction and collect file paths
+    // First: Update DB in transaction and collect file paths/R2 keys
     transaction((db) => {
       for (const id of ids) {
-        // Get file path before deleting from DB (using sql.js API)
-        const result = db.exec("SELECT file_path FROM assets WHERE id = ?", [id]);
+        // Get file path and R2 key before deleting from DB
+        const result = db.exec("SELECT file_path, cloud_r2_key FROM assets WHERE id = ?", [id]);
         const filePath = result.length > 0 && result[0].values.length > 0
           ? result[0].values[0][0] as string
           : undefined;
+        const r2Key = result.length > 0 && result[0].values.length > 0
+          ? result[0].values[0][1] as string | null
+          : null;
 
         if (filePath) {
           filesToDelete.push(filePath);
         }
+        if (r2Key) {
+          r2KeysToDelete.push(r2Key);
+        }
 
         db.run("UPDATE assets SET sync_status = 'deleted', updated_at = ? WHERE id = ?", [now, id]);
         db.run(
-          `INSERT INTO deleted_items (id, entity_type, original_id, deleted_at, version, synced)
-           VALUES (?, 'asset', ?, ?, 1, 0)`,
-          [`${tombstoneId}-${id}`, id, now]
+          `INSERT INTO deleted_items (id, entity_type, original_id, deleted_at, version, synced, cloud_r2_key)
+           VALUES (?, 'asset', ?, ?, 1, 0, ?)`,
+          [`${tombstoneId}-${id}`, id, now, r2Key ?? null]
         );
       }
     });

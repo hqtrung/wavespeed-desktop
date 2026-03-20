@@ -158,7 +158,8 @@ export function initializeSchema(db: SqlJsDatabase): void {
     device_id TEXT,
     deleted_at TEXT NOT NULL DEFAULT (datetime('now')),
     version INTEGER NOT NULL,
-    synced INTEGER NOT NULL DEFAULT 0
+    synced INTEGER NOT NULL DEFAULT 0,
+    cloud_r2_key TEXT
   )`);
 
   // R2 config table for asset storage
@@ -220,6 +221,20 @@ export function runMigrations(db: SqlJsDatabase): void {
     }
   } catch (error) {
     console.log("[Assets DB] cloud_r2_key migration check:", (error as Error).message);
+  }
+
+  // Ensure cloud_r2_key column exists in deleted_items (for R2 deletion sync)
+  try {
+    const pragmaResult = db.exec("PRAGMA table_info(deleted_items)");
+    const columns = pragmaResult[0]?.values ?? [];
+    const hasCloudR2Key = columns.some((row: unknown[]) => row[1] === "cloud_r2_key");
+
+    if (!hasCloudR2Key) {
+      console.log("[Assets DB] Adding cloud_r2_key column to deleted_items table");
+      db.run("ALTER TABLE deleted_items ADD COLUMN cloud_r2_key TEXT");
+    }
+  } catch (error) {
+    console.log("[Assets DB] deleted_items cloud_r2_key migration check:", (error as Error).message);
   }
 
   // Standard version-based migrations

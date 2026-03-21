@@ -53,6 +53,8 @@ export function setR2Client(client: R2Client | null): void {
   r2ClientInstance = client;
   // Also update sync queue
   getAssetSyncQueue().setR2Client(client);
+  // Also update sync trigger manager for auto-upload
+  getSyncTriggerManager().setR2Client(client);
 }
 
 /**

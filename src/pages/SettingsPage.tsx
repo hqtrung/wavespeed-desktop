@@ -896,8 +896,9 @@ export function SettingsPage() {
     }
   };
 
-  const [isUploadingToR2, setIsUploadingToR2] = useState(false);
-  const [r2UploadProgress, setR2UploadProgress] = useState<{
+  const [isSyncingCloud, setIsSyncingCloud] = useState(false);
+  const [cloudSyncProgress, setCloudSyncProgress] = useState<{
+    phase: "sync" | "upload" | "done";
     total: number;
     uploaded: number;
     skipped: number;
@@ -913,51 +914,66 @@ export function SettingsPage() {
     };
   } | null>(null);
 
-  // Set up R2 upload progress listener
+  // Set up cloud sync progress listener
   useEffect(() => {
     if (!window.electronAPI?.onR2UploadProgress) return;
     const unsubscribe = window.electronAPI.onR2UploadProgress((data) => {
-      setR2UploadProgress(data);
+      setCloudSyncProgress({ ...data, phase: "upload" });
     });
     return unsubscribe;
   }, []);
 
-  const handleUploadToR2 = async () => {
-    console.log("[UI] Upload to R2 clicked");
-    if (!window.electronAPI?.r2UploadAllAssets) {
-      console.error("[UI] r2UploadAllAssets not available");
+  const handleSyncCloudStorage = async () => {
+    console.log("[UI] Sync Cloud Storage clicked");
+    if (!window.electronAPI?.r2UploadAllAssets || !window.electronAPI?.syncStart) {
+      console.error("[UI] Cloud sync APIs not available");
       toast({
         title: "Not available",
-        description: "R2 upload is only available in the desktop app",
+        description: "Cloud sync is only available in the desktop app",
         variant: "destructive",
       });
       return;
     }
-    console.log("[UI] Starting R2 upload...");
-    setIsUploadingToR2(true);
-    setR2UploadProgress(null);
+    console.log("[UI] Starting cloud sync...");
+    setIsSyncingCloud(true);
+    setCloudSyncProgress(null);
     try {
-      const result = await window.electronAPI.r2UploadAllAssets();
-      console.log("[UI] R2 upload result:", result);
+      // Step 1: Sync D1 metadata first
+      setCloudSyncProgress({ phase: "sync", total: 0, uploaded: 0, skipped: 0, failed: 0, processed: 0, current: "Syncing metadata..." });
+      const syncResult = await window.electronAPI.syncStart();
+      console.log("[UI] D1 sync result:", syncResult);
+
+      // Step 2: Upload to R2
+      setCloudSyncProgress({ phase: "upload", total: 0, uploaded: 0, skipped: 0, failed: 0, processed: 0, current: "Uploading files to cloud..." });
+      const r2Result = await window.electronAPI.r2UploadAllAssets();
+      console.log("[UI] R2 upload result:", r2Result);
+
+      // Show combined result
+      const hasErrors = !syncResult.success || r2Result.failed > 0;
       toast({
-        title: "Upload complete",
-        description: `Uploaded ${result.uploaded}, skipped ${result.skipped}, failed ${result.failed}`,
-        variant: result.failed > 0 ? "destructive" : "default",
+        title: hasErrors ? "Sync completed with errors" : "Cloud sync complete",
+        description: `D1: ${syncResult.success ? "OK" : "Failed"}, R2: ${r2Result.uploaded} uploaded, ${r2Result.skipped} skipped, ${r2Result.failed} failed`,
+        variant: hasErrors ? "destructive" : "default",
       });
-      if (result.errors.length > 0) {
-        console.error("[R2 Upload errors]", result.errors);
+
+      if (r2Result.errors.length > 0) {
+        console.error("[R2 Upload errors]", r2Result.errors);
       }
+
+      // Reload sync status
+      const status = await window.electronAPI?.syncGetStatus();
+      setSyncStatus(status);
     } catch (error) {
-      console.error("[UI] R2 upload error:", error);
+      console.error("[UI] Cloud sync error:", error);
       const message = error instanceof Error ? error.message : "Unknown error";
       toast({
-        title: "Upload failed",
+        title: "Cloud sync failed",
         description: message,
         variant: "destructive",
       });
     } finally {
-      setIsUploadingToR2(false);
-      setR2UploadProgress(null);
+      setIsSyncingCloud(false);
+      setCloudSyncProgress(null);
     }
   };
 
@@ -1878,10 +1894,10 @@ export function SettingsPage() {
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={handleUploadToR2}
-                  disabled={isUploadingToR2}
+                  onClick={handleSyncCloudStorage}
+                  disabled={isSyncingCloud}
                 >
-                  {isUploadingToR2 ? "Uploading..." : "Upload to R2"}
+                  {isSyncingCloud ? "Syncing..." : "Sync Cloud Storage"}
                 </Button>
                 <Button
                   size="sm"
@@ -1892,34 +1908,40 @@ export function SettingsPage() {
                 </Button>
               </div>
 
-              {/* R2 Upload Progress */}
-              {r2UploadProgress && (
+              {/* Cloud Sync Progress */}
+              {cloudSyncProgress && (
                 <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
                   <div className="flex items-center justify-between text-sm mb-2">
-                    <span className="font-medium">Uploading to R2...</span>
+                    <span className="font-medium">
+                      {cloudSyncProgress.phase === "sync" ? "Syncing metadata..." :
+                       cloudSyncProgress.phase === "upload" ? "Uploading to cloud..." :
+                       "Syncing..."}
+                    </span>
                     <span className="text-muted-foreground">
-                      {r2UploadProgress.processed} / {r2UploadProgress.total}
+                      {cloudSyncProgress.total > 0 ? `${cloudSyncProgress.processed} / ${cloudSyncProgress.total}` : cloudSyncProgress.current}
                     </span>
                   </div>
-                  <Progress
-                    value={(r2UploadProgress.processed / r2UploadProgress.total) * 100}
-                    className="h-2"
-                  />
+                  {cloudSyncProgress.total > 0 && (
+                    <Progress
+                      value={(cloudSyncProgress.processed / cloudSyncProgress.total) * 100}
+                      className="h-2"
+                    />
+                  )}
                   <div className="flex items-center justify-between text-xs text-muted-foreground mt-1">
-                    <span className="truncate max-w-[200px]" title={r2UploadProgress.current}>
-                      {r2UploadProgress.current}
+                    <span className="truncate max-w-[200px]" title={cloudSyncProgress.current}>
+                      {cloudSyncProgress.current}
                     </span>
                     <span>
-                      {r2UploadProgress.uploaded} up, {r2UploadProgress.skipped} skip, {r2UploadProgress.failed} fail
+                      {cloudSyncProgress.uploaded} up, {cloudSyncProgress.skipped} skip, {cloudSyncProgress.failed} fail
                     </span>
                   </div>
-                  {r2UploadProgress.fileProgress && r2UploadProgress.fileProgress.percentage < 100 && (
+                  {cloudSyncProgress.fileProgress && cloudSyncProgress.fileProgress.percentage < 100 && (
                     <div className="mt-2">
                       <div className="text-xs text-muted-foreground mb-1">
-                        File: {Math.round(r2UploadProgress.fileProgress.percentage)}%
+                        File: {Math.round(cloudSyncProgress.fileProgress.percentage)}%
                       </div>
                       <Progress
-                        value={r2UploadProgress.fileProgress.percentage}
+                        value={cloudSyncProgress.fileProgress.percentage}
                         className="h-1"
                       />
                     </div>

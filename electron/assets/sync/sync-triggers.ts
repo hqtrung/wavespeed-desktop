@@ -1,10 +1,14 @@
 /**
  * Sync trigger manager for automatic synchronization.
  * Handles manual, focus-based, and timer-based sync triggers.
+ * Also uploads files to R2 cloud storage during sync.
  */
 
 import { BrowserWindow } from "electron";
 import type { SyncManager } from "./sync-manager";
+import type { R2Client } from "./r2-client";
+import { getDatabase, persistDatabase } from "../db/connection";
+import { assetsRepo, rowToMetadata } from "../db/assets.repo";
 
 export interface TriggerConfig {
   timerEnabled: boolean;
@@ -19,6 +23,7 @@ export class SyncTriggerManager {
   private focusDebounce: ReturnType<typeof setTimeout> | null = null;
   private dirtyDebounce: ReturnType<typeof setTimeout> | null = null;
   private syncManager: SyncManager | null = null;
+  private r2Client: R2Client | null = null;
   private config: TriggerConfig;
 
   constructor(config: TriggerConfig = {
@@ -36,6 +41,13 @@ export class SyncTriggerManager {
    */
   setSyncManager(manager: SyncManager): void {
     this.syncManager = manager;
+  }
+
+  /**
+   * Set the R2 client instance for file uploads.
+   */
+  setR2Client(client: R2Client | null): void {
+    this.r2Client = client;
   }
 
   /**
@@ -131,6 +143,7 @@ export class SyncTriggerManager {
 
   /**
    * Internal sync trigger method.
+   * Syncs D1 metadata and uploads new files to R2.
    */
   private async triggerSync(): Promise<void> {
     if (!this.syncManager) {
@@ -152,6 +165,67 @@ export class SyncTriggerManager {
       );
     } else {
       console.error("[SyncTriggers] Sync failed:", result.errors);
+    }
+
+    // Upload new files to R2 if configured
+    if (this.r2Client && this.r2Client.isConfigured()) {
+      await this.uploadPendingFilesToR2();
+    }
+  }
+
+  /**
+   * Upload files that don't have cloud_r2_key yet to R2.
+   */
+  private async uploadPendingFilesToR2(): Promise<void> {
+    if (!this.r2Client) return;
+
+    try {
+      const db = getDatabase();
+      const rowsResult = db.exec("SELECT * FROM assets WHERE cloud_r2_key IS NULL AND sync_status != ?", ["deleted"]);
+      const rows = rowsResult[0]?.values ?? [];
+      const assets = rows.map((row) => rowToMetadata(row));
+
+      if (assets.length === 0) {
+        console.log("[SyncTriggers] No pending files to upload to R2");
+        return;
+      }
+
+      console.log(`[SyncTriggers] Uploading ${assets.length} pending files to R2...`);
+
+      let uploaded = 0;
+      let failed = 0;
+
+      for (const asset of assets) {
+        try {
+          // Check if file exists locally
+          const { existsSync } = require("fs");
+          if (!existsSync(asset.filePath)) {
+            console.log(`[SyncTriggers] File not found, skipping: ${asset.fileName}`);
+            failed++;
+            continue;
+          }
+
+          const uploadResult = await this.r2Client.uploadFile(asset.id, asset.filePath, asset.type);
+
+          if (uploadResult.success && uploadResult.key) {
+            // Update DB with cloud_r2_key
+            db.run("UPDATE assets SET cloud_r2_key = ? WHERE id = ?", [uploadResult.key, asset.id]);
+            uploaded++;
+            console.log(`[SyncTriggers] Uploaded to R2: ${asset.fileName}`);
+          } else {
+            failed++;
+            console.error(`[SyncTriggers] R2 upload failed: ${asset.fileName} - ${uploadResult.error}`);
+          }
+        } catch (error) {
+          failed++;
+          console.error(`[SyncTriggers] R2 upload error for ${asset.fileName}:`, error);
+        }
+      }
+
+      persistDatabase();
+      console.log(`[SyncTriggers] R2 upload complete: ${uploaded} uploaded, ${failed} failed`);
+    } catch (error) {
+      console.error("[SyncTriggers] R2 upload error:", error);
     }
   }
 
